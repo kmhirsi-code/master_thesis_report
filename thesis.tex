@@ -54,18 +54,6 @@ interaction without introducing computational system lag.
 \chapter{Introduction}
 %%%%%%%%%%%%%%%%%%%%%%
 
-The introduction is a longer writeup that gently eases the reader into your
-thesis~\cite{dinesh20oakland}. Use the first paragraph to discuss the setting.
-In the second paragraph you can introduce the main challenge that you see.
-The third paragraph lists why related work is insufficient.
-The fourth and fifth paragraphs discuss your approach and why it is needed.
-The sixth paragraph will introduce your thesis statement. Think how you can
-distill the essence of your thesis into a single sentence.
-The seventh paragraph will highlight some of your results
-The eights paragraph discusses your core contribution.
-
-This section is usually 3-5 pages.
-
 Human-Computer Interaction (HCI) in high-performance computing and competitive gaming has
 consistently pushed the boundaries of input peripheral design. The advent of continuous
 depth-sensing technologies, such as the Haptic Inductive Trigger System (HITS) found in
@@ -106,15 +94,35 @@ in-game actions much like analyzing staccato and legato strikes in piano
 performance~\cite{piano_3d_force}.
 
 This adaptive approach is fundamentally needed because human biomechanics degrade and shift over
-time, particularly during extended usage. Sustained isometric contractions and cognitive stress cause distinct fatigue signatures in the finger flexor muscles~\cite{fatigue_flexor}, leading to changes in resting weight and "snap-back" velocity. By designing machine learning models and mathematical algorithms capable of identifying these fatigue indicators~\cite{stress_pressure}, the system can dynamically adjust the RT sensitivity and AL hysteresis buffers on the fly. This ensures that the peripheral remains perfectly tuned to the user's physiological state at hour six just as it was at hour one.
+time, particularly during extended usage. Sustained isometric contractions and cognitive stress
+cause distinct fatigue signatures in the finger flexor muscles~\cite{fatigue_flexor}, leading to
+changes in resting weight and "snap-back" velocity. By designing machine learning models and
+mathematical algorithms capable of identifying these fatigue indicators~\cite{stress_pressure},
+the system can dynamically adjust the RT sensitivity and AL hysteresis buffers on the fly. This 
+ensures that the peripheral remains perfectly tuned to the user's physiological state at hour six
+just as it was at hour one.
 
 The core thesis of this work is that by applying dynamic, real-time intent prediction algorithms
-to continuous analog switch telemetry, we can eliminate the biomechanical friction of static actuation thresholds, achieving personalized, low-latency input that adapts to user fatigue and stress without introducing computational overhead.
+to continuous analog switch telemetry, we can eliminate the biomechanical friction of static
+actuation thresholds, achieving personalized, low-latency input that adapts to user fatigue and
+stress without introducing computational overhead.
 
-Our evaluation demonstrates that shifting from a static threshold paradigm to a dynamic, data-driven calibration model yields significant improvements in both system performance and user experience. By implementing algorithmic noise filtering and tuning the AL and RT points to match the user's physiological profile, the system drastically reduces unintended actuations caused by resting tremors and high-stress scenarios. Furthermore, early performance profiling of low-compute inference models, such as those leveraging Linear Discriminant Analysis~\cite{lda_emg}, indicates that we can achieve sub-millisecond intent detection running directly on the peripheral's microcontroller unit (MCU).
+Our evaluation demonstrates that shifting from a static threshold paradigm to a dynamic,
+data-driven calibration model yields significant improvements in both system performance and user
+experience. By implementing algorithmic noise filtering and tuning the AL and RT points to match
+the user's physiological profile, the system drastically reduces unintended actuations caused by 
+resting tremors and high-stress scenarios. Furthermore, early performance profiling of low-compute
+inference models, such as those leveraging Linear Discriminant Analysis~\cite{lda_emg}, indicates 
+that we can achieve sub-millisecond intent detection running directly on the peripheral's 
+microcontroller unit (MCU).
 
 The core contribution of this project is a robust, low-latency telemetry processing architecture
-and a suite of adaptive calibration algorithms capable of bridging the gap between raw continuous depth-sensing hardware and human biomechanical intent. We deliver a functional data collection tool for profiling continuous analog telemetry, an automated recommendation engine for optimal AL and RT settings, and a theoretical framework for real-time fatigue adaptation. Ultimately, this work pioneers a new standard for accessible and dynamically adaptive input peripherals in high-performance HCI environments.
+and a suite of adaptive calibration algorithms capable of bridging the gap between raw continuous
+depth-sensing hardware and human biomechanical intent. We deliver a functional data collection tool
+for profiling continuous analog telemetry, an automated recommendation engine for optimal AL and
+RT settings, and a theoretical framework for real-time fatigue adaptation. Ultimately, this work
+pioneers a new standard for accessible and dynamically adaptive input peripherals in 
+high-performance HCI environments.
 
 %%%%%%%%%%%%%%%%%%%%
 \chapter{Background}
