@@ -28,24 +28,7 @@
 \makeacks
 
 \begin{abstract}
-
-Continuous depth-sensing technologies in modern analog input peripherals offer unprecedented
-hardware fidelity within the realm of high-performance Human-Computer Interaction (HCI).
-However, current implementations rely on static, user-defined actuation thresholds that fail 
-to account for individual biomechanical variance, such as resting tremors, micro-hesitations,
-and physiological degradation due to fatigue. Because these static approaches cannot adapt to
-dynamic player states, they often result in sub-optimal input latency and a high frequency of
-unintended actuations during competitive play. To address this, we propose a personalized, 
-data-driven recommendation system that dynamically tunes Actuation Level (AL) and Rapid Trigger
-(RT) parameters by analyzing continuous raw input telemetry, including actuation trajectory,
-velocity, and resting pressure. \\
-
-By leveraging statistical profiling of professional gamer input 
-signatures and a low-overhead telemetry processing pipeline, our system enables real-time intent
-detection and threshold adaptation without heavy computational overhead. Our evaluation framework
-demonstrates that this dynamic adaptation model successfully minimizes mechanical latency, 
-mitigates the biomechanical impacts of fatigue, and fundamentally optimizes high-performance 
-interaction without introducing computational system lag.
+Continuous depth-sensing in modern analog peripherals offers unprecedented hardware fidelity, yet current implementations rely on static, user-defined thresholds that ignore individual biomechanical variance. Factors such as resting tremors, micro-hesitations, and physiological fatigue create "mechanical friction" where hardware sensitivity outpaces user stability, leading to unintended actuations and sub-optimal latency. To address this, we propose a personalized, data-driven system that dynamically tunes Actuation Level (AL) and Rapid Trigger (RT) parameters by analyzing raw telemetry, including trajectory, velocity, and resting pressure. By leveraging statistical profiling of professional input signatures and a low-overhead TinyML pipeline, our system enables real-time intent detection and threshold adaptation. Evaluation demonstrates that this model minimizes mechanical latency and mitigates the impact of fatigue without introducing computational system lag.
 \end{abstract}
 
 \maketoc
@@ -54,37 +37,78 @@ interaction without introducing computational system lag.
 \chapter{Introduction}
 %%%%%%%%%%%%%%%%%%%%%%
 
-Human-Computer Interaction (HCI) in high-performance computing and competitive gaming has consistently pushed the boundaries of input peripheral design. In environments where users execute upwards of 500 Actions Per Minute (APM)~\cite{esports_tendinopathy}, hardware latency and actuation precision become critical bottlenecks. The advent of continuous depth-sensing technologies, pioneered by early Hall-effect magnetic switches~\cite{wooting_rapid_trigger, pcgamer_hall_effect} and recently refined in the Haptic Inductive Trigger System (HITS) found in Logitech SUPERSTRIKE PRO X2, provides an unprecedented level of hardware fidelity. These analog sensors can capture high-resolution, continuous telemetry of a keystroke's trajectory, moving beyond the binary constraints of traditional mechanical switches. This evolution in hardware enables granular control over Actuation Levels (AL) and Rapid Trigger (RT) mechanisms, fundamentally shifting how user intent is translated into digital actions.
+Human-Computer Interaction (HCI) in high-performance computing and competitive esports has consistently pushed the boundaries of peripheral design. In environments where users execute upwards of 500 Actions Per Minute (APM), hardware latency and actuation precision are critical bottlenecks to both performance and musculoskeletal health~\cite{esports_tendinopathy, wrist_fatigue_genre_2025}. 
 
-Despite these hardware advancements, the primary challenge lies in the software algorithms tasked with interpreting this continuous telemetry. Currently, analog switches rely heavily on static, user-defined actuation thresholds that remain completely agnostic to the immense biomechanical variance inherent in human movement. Players exhibit unique control signatures, including micro-hesitations, resting tremors, and varying velocity curves during critical gameplay moments. When forced to operate within rigid, predefined hardware boundaries, these biomechanical realities clash with static logic. This friction results in sub-optimal input latency, a high frequency of unintended actuations (misclicks), or missed inputs during high-stress scenarios.
+\section{The Evolution of Continuous Sensing Hardware}
+The transition from binary mechanical switches to continuous depth-sensing technologies has provided a solution to traditional physical constraints. This evolution, pioneered by Hall-effect magnetic sensors~\cite{wooting_rapid_trigger, pcgamer_hall_effect} and recently refined in the Haptic Inductive Trigger System (HITS) of the 2026 Logitech SUPERSTRIKE PRO X2~\cite{logitech_superstrike_2026, logitech_hits_patent}, allows for the capture of high-resolution, continuous telemetry of a keystroke's trajectory. Such hardware enables granular control over Actuation Levels (AL) and Rapid Trigger (RT) mechanisms, which have demonstrated empirical benefits in high-stakes environments like human-piloted drone racing~\cite{drone_rapid_trigger}.
 
-Existing research and commercial implementations are largely insufficient because they approach analog actuation as a static problem rather than a dynamic physiological process. While early studies established the historical baseline for continuous-sensor actuation, proving that software-defined actuation points are empirically superior for speed and neuromotor efficiency~\cite{touchpad_comparison}, they do not account for real-time human variance. Advanced intent detection frameworks, such as ReactEMG~\cite{reactemg}, offer zero-shot intent prediction but are designed for surface electromyography (sEMG) and are far too computationally heavy for standard switch displacement telemetry. Conversely, current commercial implementations simply hand the user a raw sensitivity slider, failing to provide the algorithmic safeguards or auto-calibration profiles necessary to filter out physiological noise~\cite{dynamic_keyboard, keystroke_dynamics_arxiv} and translate messy, analog finger movements into perfectly stable digital clicks.
+\section{The Limitations of Static Actuation Thresholds}
+Despite these hardware leaps, the software interpreting this data remains limited. Current analog peripherals rely on static firmware thresholds that are agnostic to human biomechanical variance. Players exhibit unique control signatures, including micro-hesitations and varying velocity curves, which often clash with rigid hardware logic~\cite{impact2018}. When static thresholds are set too aggressively, they fail to filter out physiological noise; when set too conservatively, they introduce unnecessary mechanical pre-travel. This friction results in sub-optimal latency or a high frequency of unintended actuations during high-stress scenarios~\cite{touchpad_comparison, dynamic_keyboard}.
 
-The transition from binary to continuous-sensing input mechanisms has been a primary focus in high-performance HCI to reduce input latency and mechanical pre-travel. Early explorations of analog actuation were largely confined to specialized accessibility devices, pressure-sensitive touchpads~\cite{touchpad_comparison}, and side-channel telemetry logging~\cite{monaco_sok_2018}. However, the popularization of Hall-effect sensors and magnetic switches introduced adjustable Actuation Levels (AL) and Rapid Trigger (RT) to consumer keyboards, fundamentally altering high-APM (Actions Per Minute) competitive gaming~\cite{attackshark_taphold}. Recently, this continuous depth-sensing paradigm was successfully translated into pointing devices with the release of the Logitech G Pro X2 SUPERSTRIKE. This peripheral utilizes a proprietary Haptic Inductive Trigger System (HITS) to measure continuous switch displacement via induction, simulating tactile feedback through localized motors while allowing for dynamic, software-defined actuation~\cite{logitech_hits_patent, fox_superstrike_2026, techradar_superstrike_2026}. While these hardware advancements successfully eliminate static mechanical constraints and lower system latency~\cite{drone_rapid_trigger}, they rely entirely on static firmware algorithms that fail to account for the user's dynamic physiological state.
+\section{Neuromotor Fatigue and Performance Decay}
+A critical, often overlooked factor in input precision is neuromotor fatigue. Sustained isometric contractions and repetitive clicking during extended sessions lead to distinct fatigue signatures in the finger flexor muscles, altering resting finger weight and flexor "snap-back" velocity~\cite{fatigue_flexor, clicking_fatigue_ergonomics_2024}. Recent studies indicate that while the brain may "sharpen" finger-specific representations during fatiguing tasks~\cite{heimhofer2024finger}, the physical output is prone to measurable degradation and genre-specific kinematic changes~\cite{wrist_fatigue_genre_2025, difrancisco2019managing}. Existing adaptive interfaces focus on accessibility or broad stress detection~\cite{stress_pressure}, leaving a void in high-performance systems that can autonomously recalibrate thresholds to match a user's current physiological state.
 
-Parallel to hardware evolution, the application of machine learning to user input telemetry has seen significant growth, primarily in the domain of security and biometrics. Studies leveraging continuous keystroke dynamics~\cite{continuous_auth_2021} and transformer-based architectures like TypeFormer~\cite{typeformer2022} have demonstrated that human typing patterns contain highly distinct, predictable spatial and temporal signatures. However, these models typically operate at the OS level, evaluating binary timestamps rather than the raw, continuous switch displacement data provided by modern analog switches. More analogous to our work is the field of myoelectric control, where models like ReactEMG predict user intent directly from muscle activity prior to physical actuation~\cite{reactemg}. Translating these predictive capabilities to peripheral microcontrollers (MCUs) requires extremely low-latency, quantized models. Recent advancements in TinyML for fault-tolerant RISC-V edge devices have made sub-millisecond on-device inference viable~\cite{tinyml_edge_2025, edge_ai_sensors}, presenting an untapped opportunity to apply dynamic intent prediction directly to continuous Hall-effect and HITS telemetry without OS-level overhead.
+\section{Adaptive Intent Detection via Edge AI}
+To ensure adaptation does not introduce its own latency, we leverage advancements in TinyML for RISC-V edge devices. Unlike OS-level frameworks like TypeFormer~\cite{typeformer2022} or ReactEMG~\cite{reactemg}, which are too computationally heavy for raw telemetry, our approach uses quantized models to achieve sub-millisecond inference directly on the peripheral's Microcontroller Unit (MCU)~\cite{tinyml_edge_2025, singh2023edge}. This allows for "pre-report" intent prediction, filtering the user's physical input—categorizing staccato versus legato strikes—before the digital signal ever reaches the operating system~\cite{piano_3d_force}.
 
-In high-stress computing and esports, sustained isometric muscle contractions lead to distinct fatigue signatures, altering resting finger weight and flexor snap-back velocity~\cite{fatigue_flexor, esports_tendinopathy_2021}. Existing adaptive interface research has largely focused on automated accessibility adjustments~\cite{dynamic_keyboard} or stress detection via resting pressure~\cite{stress_pressure}. Despite widespread clinical acknowledgment of performance degradation due to neuromotor fatigue~\cite{biomechanics_fatigue_2023}, modern analog input systems lack the algorithmic safeguards to autonomously calibrate RT and AL thresholds over extended sessions. Our work bridges this gap by merging the continuous telemetry of modern inductive switches with lightweight MCU-bound machine learning, creating an adaptive threshold paradigm that dynamically mitigates biomechanical variance and fatigue.
+\section{Thesis and Contributions}
+The core thesis of this work is that dynamic, real-time intent prediction can eliminate the friction caused by static thresholds. By analyzing continuous telemetry, we can extract a user's "control signature" and adjust RT and AL buffers on the fly to compensate for fatigue. The contributions of this project are:
+\begin{itemize}
+    \item A robust, low-latency telemetry processing architecture for continuous inductive and Hall-effect sensors.
+    \item A suite of adaptive calibration algorithms that tune AL and RT parameters based on physiological state.
+    \item A theoretical framework for fatigue detection using snap-back velocity and resting pressure changes.
+    \item An evaluation of on-device TinyML inference on RISC-V architectures to demonstrate zero-lag threshold adaptation.
+\end{itemize}
 
-To bridge this gap, this project proposes an adaptive, personalized data-driven calibration system designed to intelligently tune AL and RT parameters based on estimated user intent. By capturing and analyzing continuous raw input telemetry—specifically actuation trajectory, velocity, and resting pressure—we can extract distinct, user-specific control signatures~\cite{continuous_keystroke_mdpi}. Our methodology first establishes a gold-standard statistical baseline by analyzing high-fidelity analog profiling of professional gamers, mapping biomechanical intent to specific in-game actions much like analyzing staccato and legato strikes in piano performance~\cite{piano_3d_force}.
-
-This adaptive approach is fundamentally needed because human biomechanics degrade and shift over time, particularly during extended usage. Sustained isometric contractions and cognitive stress cause distinct fatigue signatures in the finger flexor muscles~\cite{fatigue_flexor, 1hp_esports_ergonomics}, leading to measurable changes in resting weight and "snap-back" velocity. By designing machine learning models and mathematical algorithms capable of identifying these fatigue indicators~\cite{stress_pressure}, the system can dynamically adjust the RT sensitivity and AL hysteresis buffers on the fly. This ensures that the peripheral remains perfectly tuned to the user's physiological state at hour six just as it was at hour one.
-
-The core thesis of this work is that by applying dynamic, real-time intent prediction algorithms to continuous analog switch telemetry, we can eliminate the biomechanical friction of static actuation thresholds, achieving personalized, low-latency input that adapts to user fatigue and stress without introducing prohibitive computational overhead.
-
-Our evaluation demonstrates that shifting from a static threshold paradigm to a dynamic, data-driven calibration model yields significant improvements in both system performance and user experience. By implementing algorithmic noise filtering and tuning the AL and RT points to match the user's physiological profile, the system drastically reduces unintended actuations caused by resting tremors and high-stress scenarios. Furthermore, early performance profiling of low-compute inference models, such as those leveraging Linear Discriminant Analysis~\cite{lda_emg} and quantized TinyML architectures~\cite{tinyml_mcu_inference}, indicates that we can achieve sub-millisecond intent detection running directly on the peripheral's microcontroller unit (MCU).
-
-The core contribution of this project is a robust, low-latency telemetry processing architecture and a suite of adaptive calibration algorithms capable of bridging the gap between raw continuous depth-sensing hardware and human biomechanical intent. We deliver a functional data collection tool for profiling continuous analog telemetry, an automated recommendation engine for optimal AL and RT settings, and a theoretical framework for real-time fatigue adaptation. Ultimately, this work pioneers a new standard for accessible and dynamically adaptive input peripherals in high-performance HCI environments.
-
-%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%
 \chapter{Background}
-%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%
 
-The background section introduces the necessary background to understand your
-work. This is not necessarily related work but technologies and dependencies
-that must be resolved to understand your design and implementation.
+To understand the design and implementation of an adaptive actuation system, it is necessary to establish the technical foundations of continuous sensing hardware, the mathematical logic of modern trigger parameters, and the biomechanical constraints of the human hand.
 
-This section is usually 3-5 pages.
+\section{Continuous Depth-Sensing Mechanisms}
+
+Traditional mechanical switches operate on a binary principle: a circuit is either open or closed based on a physical contact point. In contrast, continuous depth-sensing switches measure the absolute position of the stem throughout its entire travel distance.
+
+\subsection{Hall-Effect and Magnetic Sensing}
+Hall-effect sensors utilize a permanent magnet attached to the switch stem and a sensor on the Printed Circuit Board (PCB). As the magnet approaches the sensor, the Hall voltage varies proportionally to the magnetic field strength~\cite{wooting_rapid_trigger, pcgamer_hall_effect}. This allows the firmware to map voltage levels to precise displacement values in millimeters. This technology eliminated "debounce" delay—the physical vibrations of metal leaves—allowing for near-instantaneous signal processing.
+
+\subsection{Haptic Inductive Trigger System (HITS)}
+Refined in the 2026 Logitech SUPERSTRIKE series, the Haptic Inductive Trigger System (HITS) replaces magnets with an inductive coil architecture~\cite{logitech_hits_patent, techradar_superstrike_2026}. By measuring changes in electromagnetic induction caused by the proximity of a metallic puck within the trigger, HITS provides higher resolution and lower susceptibility to external magnetic interference compared to Hall-effect sensors. Furthermore, HITS integrates localized haptic motors to simulate tactile "bumps" or "clicks" at software-defined depths, decoupling the physical feel of the switch from its electrical actuation point~\cite{fox_superstrike_2026}.
+
+\section{Control Parameters: AL and RT}
+
+The transition to continuous sensing introduced two primary variables that define the "feel" and speed of an input device.
+
+\subsection{Actuation Level (AL)}
+The Actuation Level (AL) is the specific depth ($d$) at which a "key down" event is registered. In traditional switches, this is fixed (e.g., 2.0mm). In analog systems, AL is a variable $d_{act} \in [0.1, 4.0]$mm. Lowering $d_{act}$ reduces mechanical pre-travel, allowing for faster response times, but increases the risk of accidental actuations caused by resting finger weight.
+
+\subsection{Rapid Trigger (RT)}
+Rapid Trigger (RT) eliminates the fixed reset point found in mechanical switches. In a standard switch, the key must travel back up past a specific "reset point" before it can be pressed again. RT logic instead monitors the direction of travel. As soon as the stem moves upward by a specific threshold ($\Delta_{up}$), the input resets. Conversely, as soon as it moves back down by $\Delta_{down}$, it reactuates~\cite{wooting_rapid_trigger, drone_rapid_trigger}. This allows for hyper-fast "spamming" of inputs, which is critical in high-APM genres.
+
+\section{Biomechanical Variance and Neuromotor Fatigue}
+
+The efficiency of AL and RT is limited by the physiological state of the user. Human motor control is subject to "signal-dependent noise," where the variance of movement increases with the force or speed of the action.
+
+\subsection{Resting Pressure and Tremors}
+Even at rest, users exert varying degrees of force on a peripheral. Factors such as cognitive stress or caffeine intake can cause micro-tremors—high-frequency, low-amplitude oscillations in displacement telemetry~\cite{stress_pressure}. If the AL is set to 0.1mm and the user's tremor amplitude is 0.15mm, the system will register "ghost" inputs.
+
+\subsection{Neuromotor Fatigue Signatures}
+Extended sessions lead to fatigue in the \textit{flexor digitorum superficialis} and \textit{extensor digitorum} muscles~\cite{fatigue_flexor, clicking_fatigue_ergonomics_2024}. Fatigue manifests in two measurable telemetry changes:
+\begin{enumerate}
+    \item \textbf{Velocity Decay:} The "snap-back" velocity (the speed at which a finger releases a key) decreases as the extensor muscles tire~\cite{tholl_wrist_fatigue_2025}.
+    \item \textbf{Resting Weight Shift:} As the flexor muscles lose tonicity, the resting weight of the finger often increases, leading to deeper "resting" displacement in the analog sensor~\cite{heimhofer2024finger, 1hp_esports_ergonomics}.
+\end{enumerate}
+
+\section{On-Device Inference and TinyML}
+
+Processing continuous telemetry at high polling rates (e.g., 8,000Hz) requires low-latency computation that cannot be achieved through standard OS-level drivers due to USB polling intervals and kernel scheduling~\cite{monaco_sok_2018}.
+
+\subsection{RISC-V and Vector Extensions}
+Modern high-performance peripherals utilize 32-bit MCUs based on the RISC-V architecture. Recent iterations include vector extensions that allow for parallel processing of telemetry arrays~\cite{tinyml_mcu_inference}. This hardware is capable of running "TinyML"—quantized machine learning models (such as Linear Discriminant Analysis or lightweight LSTMs) that have been optimized for minimal memory and power footprints~\cite{tinyml_edge_2025, singh2023edge}.
+
+\subsection{Quantization and Latency}
+To maintain a sub-millisecond pipeline, ML models must undergo quantization, converting 32-bit floating-point weights into 8-bit integers (INT8). This reduction allows the MCU to perform "pre-report" inference—predicting if a movement is an intended click or a fatigue-induced tremor before the HID (Human Interface Device) report is even sent to the computer.
 
 
 %%%%%%%%%%%%%%%%
