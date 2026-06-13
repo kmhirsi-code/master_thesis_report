@@ -327,3 +327,162 @@
   journal = {PeerJ Computer Science / JMIR Serious Games},
   year = {2023},
 }
+
+% =============================================================================
+% GROUP 9: Signal Processing & Numerical Methods
+% =============================================================================
+
+@article{savitzky_golay_1964,
+  author  = {Abraham Savitzky and Marcel J. E. Golay},
+  title   = {{Smoothing and Differentiation of Data by Simplified Least Squares Procedures}},
+  journal = {Analytical Chemistry},
+  volume  = {36},
+  number  = {8},
+  pages   = {1627--1639},
+  year    = {1964},
+  doi     = {10.1021/ac60214a047}
+}
+
+@article{akima_1970,
+  author  = {Hiroshi Akima},
+  title   = {{A New Method of Interpolation and Smooth Curve Fitting Based on Local Procedures}},
+  journal = {Journal of the ACM},
+  volume  = {17},
+  number  = {4},
+  pages   = {589--602},
+  year    = {1970},
+  doi     = {10.1145/321607.321609}
+}
+
+@article{fritsch_carlson_1980,
+  author  = {F. N. Fritsch and R. E. Carlson},
+  title   = {{Monotone Piecewise Cubic Interpolation}},
+  journal = {SIAM Journal on Numerical Analysis},
+  volume  = {17},
+  number  = {2},
+  pages   = {238--246},
+  year    = {1980},
+  doi     = {10.1137/0717021}
+}
+
+% =============================================================================
+% GROUP 10: Optimization & Machine Learning Methods
+% =============================================================================
+
+@article{ratner_snorkel_2020,
+  author  = {Alexander Ratner and Stephen H. Bach and Henry Ehrenberg and Jason Fries and Sen Wu and Christopher R{\'{e}}},
+  title   = {{Snorkel: Rapid Training Data Creation with Weak Supervision}},
+  journal = {The VLDB Journal},
+  volume  = {29},
+  number  = {2--3},
+  pages   = {709--730},
+  year    = {2020},
+  doi     = {10.1007/s00778-019-00552-1}
+}
+
+@inproceedings{ke_lightgbm_2017,
+  author    = {Guolin Ke and Qi Meng and Thomas Finley and Taifeng Wang and Wei Chen and Weidong Ma and Qiwei Ye and Tie-Yan Liu},
+  title     = {{LightGBM: A Highly Efficient Gradient Boosting Decision Tree}},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {30},
+  year      = {2017}
+}
+
+@article{van_den_oord_wavenet_2016,
+  author  = {A{\"{a}}ron van den Oord and Sander Dieleman and Heiga Zen and Karen Simonyan and Oriol Vinyals and Alex Graves and Nal Kalchbrenner and Andrew W. Senior and Koray Kavukcuoglu},
+  title   = {{WaveNet: A Generative Model for Raw Audio}},
+  journal = {arXiv preprint arXiv:1609.03499},
+  year    = {2016}
+}
+
+@inproceedings{lin_focal_2017,
+  author    = {Tsung-Yi Lin and Priya Goyal and Ross B. Girshick and Kaiming He and Piotr Doll{\'{a}}r},
+  title     = {{Focal Loss for Dense Object Detection}},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision (ICCV)},
+  pages     = {2980--2988},
+  year      = {2017}
+}
+
+@inproceedings{lafferty_crf_2001,
+  author    = {John D. Lafferty and Andrew McCallum and Fernando C. N. Pereira},
+  title     = {{Conditional Random Fields: Probabilistic Models for Segmenting and Labeling Sequence Data}},
+  booktitle = {Proceedings of the 18th International Conference on Machine Learning (ICML)},
+  pages     = {282--289},
+  year      = {2001}
+}
+
+@misc{hansen_cma_2016,
+  author = {Nikolaus Hansen},
+  title  = {{The CMA Evolution Strategy: A Tutorial}},
+  year   = {2016},
+  eprint = {arXiv:1604.00772},
+  note   = {arXiv preprint arXiv:1604.00772}
+}
+
+@inproceedings{optuna_akiba_2019,
+  author    = {Takuya Akiba and Shotaro Sano and Toshihiko Yanase and Takeru Ohta and Masanori Koyama},
+  title     = {{Optuna: A Next-generation Hyperparameter Optimization Framework}},
+  booktitle = {Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining},
+  year      = {2019},
+  doi       = {10.1145/3292500.3330701}
+}
+
+@inproceedings{bergstra_tpe_2011,
+  author    = {James Bergstra and R\'{e}mi Bardenet and Yoshua Bengio and Bal\'{a}zs K\'{e}gl},
+  title     = {{Algorithms for Hyper-Parameter Optimization}},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {24},
+  year      = {2011}
+}
+
+@article{breiman_rf_2001,
+  author  = {Leo Breiman},
+  title   = {{Random Forests}},
+  journal = {Machine Learning},
+  volume  = {45},
+  number  = {1},
+  pages   = {5--32},
+  year    = {2001},
+  doi     = {10.1023/A:1010933404324}
+}
+
+@article{bai_tcn_2018,
+  author  = {Shaojie Bai and J. Zico Kolter and Vladlen Koltun},
+  title   = {{An Empirical Evaluation of Generic Convolutional and Recurrent Networks for Sequence Modeling}},
+  journal = {arXiv preprint arXiv:1803.01271},
+  year    = {2018}
+}
+
+@article{friedman_gb_2001,
+  author  = {Jerome H. Friedman},
+  title   = {{Greedy Function Approximation: A Gradient Boosting Machine}},
+  journal = {The Annals of Statistics},
+  volume  = {29},
+  number  = {5},
+  pages   = {1189--1232},
+  year    = {2001},
+  doi     = {10.1214/aos/1013203451}
+}
+
+% Monaco SoK 2018: IEEE S&P SoK on keylogging side channels.
+% Cited in the Background for USB HID polling / kernel scheduling timing constraints.
+% The paper discusses how OS scheduler tick rates (64–1000 Hz) limit achievable
+% temporal precision for input events captured via standard OS paths —
+% tangentially relevant; consider replacing with a more direct input-latency reference.
+@inproceedings{monaco_sok_2018,
+  author    = {John V. Monaco},
+  title     = {{SoK: Keylogging Side Channels}},
+  booktitle = {IEEE Symposium on Security and Privacy (S\&P)},
+  year      = {2018},
+  pages     = {211--228},
+  doi       = {10.1109/SP.2018.00026}
+}
+
+% Alias for Tholl et al. wrist fatigue paper (same as wrist_fatigue_genre_2025)
+@article{tholl_wrist_fatigue_2025,
+  author  = {C. Tholl and L. Hansen and I. Frob{\"o}se},
+  title   = {{Wrist extensor fatigue and game-genre-specific kinematic changes in esports athletes: a quasi-experimental study}},
+  journal = {Journal of Electronic Gaming and Esports},
+  year    = {2025},
+  note    = {PMCID: PMC12400618}
+}
