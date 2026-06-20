@@ -17,7 +17,7 @@
 \usepackage[utf8]{inputenc}
 \usepackage[tracking=true,kerning=true,spacing=true]{microtype}
 \microtypecontext{spacing=nonfrench}
-\usepackage[DIV=12,BCOR=2mm,headinclude=true,footinclude=false]{typearea}
+\usepackage[DIV=14,BCOR=2mm,headinclude=true,footinclude=false]{typearea}
 \usepackage[
   backend=biber,
   style=numeric-comp,
@@ -35,8 +35,8 @@
 \usepackage[french,german,english]{babel}
 \usepackage{fourier}
 \def\fourierScale{s*[1.2]}
-\usepackage{setspace} % slightly larger spacing
-\setstretch{1.1}
+\usepackage{setspace} % tighter spacing for compact layout
+\setstretch{1.0}
 \usepackage{hyperref}
 \hypersetup{pdfborder={0 0 0}, colorlinks=true, linkcolor=black, citecolor=black, urlcolor=black}
 
@@ -108,7 +108,7 @@
 \newlength{\txtheight}\setlength{\txtheight}{0.9\tpheight}
 \begingroup
 \thispagestyle{empty}
-\drop=0.1\txtheight
+\drop=0.05\txtheight
 \begin{textblock*}{4in}[0.3066,0.39](1.5in,0.85in)
     \includegraphics[width=2.5in]{EPFLlogo}
 \end{textblock*}
@@ -119,29 +119,29 @@
 \fi
 \vspace*{\drop}
 \centering 
-{\LARGE École Polytechnique Fédérale de Lausanne}\\[2\baselineskip]
-{\LARGE\sffamily \@title}\\[2\baselineskip]
+{\LARGE École Polytechnique Fédérale de Lausanne}\\[0.8\baselineskip]
+{\LARGE\sffamily \@title}\\[0.8\baselineskip]
 by \@author\par
 \vfill
 {\LARGE \projectterm}\par
-\vspace{\drop}
+\vspace{0.5\drop}
 
 \flushleft
 {Approved by the Examining Committee:}\par
-\vspace{1.5\baselineskip}
+\vspace{0.8\baselineskip}
 \@adviser\\
-Thesis Advisor \\[1\baselineskip]
+Thesis Advisor \\[0.6\baselineskip]
 \@expert\\
-External Expert \\[1\baselineskip]
+External Expert \\[0.6\baselineskip]
 \@supervisor\\
 Thesis Supervisor\par
 \centering
-\vspace{1\baselineskip}
+\vspace{0.6\baselineskip}
 EPFL CVLAB \\
 BC 309 (Bâtiment BC) \\
 Station 14 \\
 CH-1015 Lausanne \\[\baselineskip]
-\today
+\@date
 \par
 \vfill
 \endgroup
@@ -183,6 +183,10 @@ Consider acknowledging the use and location of this thesis package.
 Define your acknowledgments in \texttt{\textbackslash{}acknowledgments\{...\}}
 and show them with \texttt{\textbackslash{}makeacks}.
 }
+\def\@ackquote{}
+\newcommand{\ackquote}[1]{
+  \def\@ackquote{#1}
+}
 \newcommand{\acknowledgments}[1]{
   \def\@acknowledgments{#1}
 }
@@ -190,15 +194,25 @@ and show them with \texttt{\textbackslash{}makeacks}.
 \def\makeacks{\par
 % Achnowledgments
 \cleardoublepage
-\chapter*{Acknowledgments}
 \markboth{Acknowledgments}{Acknowledgments}
 \addcontentsline{toc}{chapter}{Acknowledgments}
 
+\ifx\@ackquote\@empty\else
+\begin{flushright}
+\itshape
+\@ackquote
+\end{flushright}
+\vspace{1\baselineskip}
+\fi
+
+{\centering\huge\bfseries Acknowledgments\par}
+\vspace{1\baselineskip}
+
 \@acknowledgments
 
-\bigskip
+\medskip
  
-\noindent\textit{Lausanne, \today}
+\noindent\textit{Lausanne, \@date}
 \hfill \@author
 }
 
@@ -215,10 +229,10 @@ and show them with \texttt{\textbackslash{}makeacks}.
 \def\endfrenchabstract{\end{otherlanguage}}
 
 \def\maketoc{
-\cleardoublepage
 \pdfbookmark{\contentsname}{toc}
 \tableofcontents
-\setlength{\parskip}{1em}
+\clearpage
+\setlength{\parskip}{0.3em}
 }
 
 \endinput

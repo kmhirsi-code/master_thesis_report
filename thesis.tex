@@ -8,55 +8,97 @@
 % using this template.
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\documentclass[a4paper,11pt,oneside]{report}
+\documentclass[a4paper,11pt,oneside,openany]{report}
 % Options: MScThesis, BScThesis, MScProject, BScProject
 \usepackage[MScThesis,lablogo]{EPFLreport}
 \usepackage{xspace}
 \usepackage{amsmath}
 \usepackage{booktabs}
 \usepackage{tikz}
+\usepackage{ragged2e}
 \usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+
+% Tighten spacing for compact, continuous layout
+\usepackage[compact,nobottomtitles*]{titlesec}
+\titleclass{\chapter}{straight}
+\titleformat{\chapter}[hang]{\Large\bfseries}{\thechapter.}{0.5em}{}
+\titleformat{\section}[hang]{\normalsize\bfseries}{\thesection}{0.5em}{}
+\titleformat{\subsection}[runin]{\small\bfseries}{\thesubsection}{0.5em}{}[.]
+\titlespacing*{\chapter}{0pt}{0.2\baselineskip}{0.25\baselineskip}
+\titlespacing*{\section}{0pt}{0.45\baselineskip}{0.2\baselineskip}
+\titlespacing*{\subsection}{0.5em}{0.2\baselineskip}{0.5em}
+
+% Compact lists and floats
+\usepackage{enumitem}
+\setlist{noitemsep, topsep=0.2em}
+\setlist[itemize]{left=0pt}
+\floatsep=0.4\baselineskip plus 0.1\baselineskip
+\textfloatsep=0.5\baselineskip plus 0.1\baselineskip
+\intextsep=0.3\baselineskip plus 0.1\baselineskip
 
 \title{Adaptive Calibration Algorithms\\for Tunable Analog Peripherals}
 \author{Khalil M'hirsi}
+\date{7 August 2026}
 \supervisor{Christophe Constantin}
 \adviser{Prof. Mathieu Salzmann}
 %\coadviser{Second Adviser}
 \expert{Richard Lengagne}
+\ackquote{``I struggled for a long time\\
+with surviving.\\
+And no matter what,\\
+you keep finding something\\
+to fight for.''\\
+--- The Last of Us}
+\acknowledgments{%
+I would like to express my sincere gratitude to Christophe Constantin, my supervisor at Logitech, for his trust, guidance, and critical perspective throughout this thesis. I am equally thankful to Yael, a close collaborator on this project, whose feedback and thoughtful challenges helped sharpen both the ideas and the direction of the work. I am also deeply grateful to Professor Mathieu Salzmann for his valuable advice, high standards, and steady guidance in ensuring that this thesis remained rigorous and focused.
+
+I would also like to thank Kilian and Frederic for their technical support on the hardware side, and Jozef and Lilou for the many helpful discussions on machine learning and signal processing. I am grateful as well to my teammates Anais and Kevin, to Thomas, and to the broader team at Logitech for the many forms of support that surrounded this work, from technical discussions and thoughtful advice to the practical organization of data-collection sessions and user tests. This thesis would not have taken its final shape without that collective effort.
+
+On a more personal note, I am deeply grateful to my partner, Sophia, for the patience, steadiness, and care she brought throughout a demanding period. Her presence made the difficult moments lighter and the better ones meaningful. I am equally thankful to my close friends Hugo, Christelle, and Maxence, whose encouragement, listening, and honesty helped me keep moving forward when my own perspective narrowed. More broadly, I am grateful to those closest to me who stood by me through a difficult time and helped me carry this work to its conclusion.
+}
 
 
 \begin{document}
 \maketitle
-\makededication
 \makeacks
 
 \begin{abstract}
-Analog peripherals with continuous depth-sensing hardware offer sub-millimetre actuation precision, yet their firmware relies on static, manually-configured thresholds that ignore per-user biomechanical variance and degrade under neuromotor fatigue. We present an offline adaptive calibration system that analyses recorded telemetry from Hall-effect and inductive switches to recommend personalized Actuation Level (AL) and Rapid Trigger (RT) settings. The system makes three contributions: (1) a programmatic labeling pipeline that automatically annotates click-intent boundaries from raw depth signals without manual annotation, enabling supervised training with no labeling cost; (2) a four-class temporal sequence labeling model---supporting Random Forest, Gradient Boosted Trees, and a dilated residual fully-convolutional network---that identifies make-onset, click-hold, and break-onset phases from 1\,kHz telemetry; and (3) a joint CMA-ES optimizer that simulates the firmware's Rapid Trigger state machine frame-by-frame and finds the Pareto-optimal (AL, RT) configuration minimizing actuation latency subject to false-positive constraints.
+Analog peripherals with continuous depth-sensing hardware offer sub-millimetre actuation precision, yet their firmware often relies on static thresholds that ignore per-user biomechanical variance and degrade under neuromotor fatigue. This thesis addresses that gap by designing an end-to-end click-sensitivity recommendation pipeline for Haptic Inductive Trigger System (HITS) devices, using telemetry streamed from the mouse in order to recommend personalized Actuation Level (AL) and Rapid Trigger (RT) settings. The system makes three contributions: (1) a supervised labeling workflow that starts from human-labeled click boundaries and progressively accelerates subsequent labeling through model-assisted iteration; (2) a four-class temporal intent-detection model---supporting Random Forest, Gradient Boosted Trees, and a dilated residual fully-convolutional network---that combines digital signal preprocessing, class-imbalance-aware sample selection, and context-rich features to identify make-onset, click-hold, and break-onset phases from high-frequency telemetry; and (3) a joint CMA-ES optimizer that simulates the firmware click state machine frame-by-frame and finds Pareto-optimal (AL, RT) configurations that reduce actuation latency while maximizing click reliability through explicit constraints on missed clicks and unintended actuations. Together, these components form a practical recommendation workflow from raw HITS telemetry to interpretable parameter recommendations for click sensitivity tuning.
 \end{abstract}
 
+\clearpage
+
 \maketoc
+
+% Configure paragraph breaking for two-column mode
+% TeX parameters to reduce overfull lines by prioritizing line breaks over tight spacing
+\tolerance=2000           % Allow looser justification (default 200, strict)
+\emergencystretch=1.5em   % Extra horizontal space when no good break point exists
+\hyphenpenalty=50         % Encourage hyphenation over tight spacing
+
+\twocolumn
 
 %%%%%%%%%%%%%%%%%%%%%%
 \chapter{Introduction}
 %%%%%%%%%%%%%%%%%%%%%%
 
-Human-Computer Interaction (HCI) in high-performance computing and competitive esports has consistently pushed the boundaries of peripheral design. In environments where users execute upwards of 500 Actions Per Minute (APM), hardware latency and actuation precision are critical bottlenecks to both performance and musculoskeletal health~\cite{esports_tendinopathy, wrist_fatigue_genre_2025}. 
+Human-Computer Interaction (HCI) in high-performance computing and competitive esports places stringent demands on input peripherals. In environments where users execute several hundred Actions Per Minute (APM), actuation latency and threshold stability can affect both task performance and musculoskeletal load~\cite{esports_tendinopathy, wrist_fatigue_genre_2025}.
 
 \section{The Evolution of Continuous Sensing Hardware}
-The landscape of human-computer interaction (HCI) is undergoing a paradigm shift driven by advancements in peripheral hardware, transitioning from traditional binary mechanical switches to continuous analog sensing. Historically, optimizing selection techniques and activation thresholds has been a foundational goal in HCI \cite{touchpad_comparison, impact2018}. However, recent breakthroughs in magnetic and inductive switches have revolutionized input granularity. The commercialization of Hall-effect keyboards featuring "Rapid Trigger" technology allows for dynamic keystroke actuation and reset points, granting users unprecedented control in time-critical environments ranging from competitive gaming \cite{wooting_rapid_trigger, pcgamer_hall_effect} to human-piloted drone racing \cite{drone_rapid_trigger}. Similarly, the introduction of the Haptic Inductive Trigger System (HITS), as exemplified by Logitech's Superstrike technology, redefines mouse inputs by merging precise inductive sensing with customizable haptic feedback \cite{logitech_superstrike_2026, logitech_hits_patent, fox_superstrike_2026, techradar_superstrike_2026}. Alongside firmware advancements like tap-hold macro integrations \cite{attackshark_taphold} and fine-tuned magnetic sensors \cite{magnetic_tuning}, these devices are bridging the gap between digital input and continuous physical expression, much like the dynamic finger-key interactions observed in piano performance \cite{piano_3d_force} and early dynamic keyboard concepts \cite{dynamic_keyboard}.
+Peripheral hardware has shifted from binary mechanical switches toward continuous sensing interfaces. In HCI, threshold selection and activation logic have long been recognized as key determinants of usability and speed \cite{touchpad_comparison, impact2018}. Recent Hall-effect and inductive devices expose depth-dependent actuation and reset behavior to firmware, including Rapid Trigger mechanisms for dynamic re-actuation \cite{wooting_rapid_trigger, pcgamer_hall_effect, drone_rapid_trigger}. Commercial systems such as HITS further combine inductive sensing with configurable haptic feedback \cite{logitech_superstrike_2026, logitech_hits_patent, fox_superstrike_2026, techradar_superstrike_2026}. Collectively, these developments increase control resolution but also increase dependence on well-calibrated software thresholds \cite{dynamic_keyboard, magnetic_tuning, attackshark_taphold}.
 
 \section{The Limitations of Static Actuation Thresholds}
 Despite these hardware leaps, the software interpreting this data remains limited. Current analog peripherals rely on static firmware thresholds that are agnostic to human biomechanical variance. Players exhibit unique control signatures, including micro-hesitations and varying velocity curves, which often clash with rigid hardware logic~\cite{impact2018}. When static thresholds are set too aggressively, they fail to filter out physiological noise; when set too conservatively, they introduce unnecessary mechanical pre-travel. This friction results in sub-optimal latency or a high frequency of unintended actuations during high-stress scenarios~\cite{touchpad_comparison, dynamic_keyboard}.
 
 \section{Neuromotor Fatigue and Performance Decay}
-Furthermore, these advancements in gaming hardware intersect with the physical well-being of the user. The exponential rise in actions-per-minute (APM) in esports has led to a parallel increase in repetitive strain injuries and tendinopathies \cite{esports_tendinopathy, difrancisco2019managing, 1hp_esports_ergonomics}. Biomechanical research highlights distinct fatigue development patterns between keyboard and mouse usage \cite{fatigue_flexor}, with repetitive clicking directly degrading aiming performance and inducing forearm muscle fatigue \cite{clicking_fatigue_ergonomics_2024}. In fact, high-APM gaming genres impose specific kinematic burdens on wrist extensors \cite{wrist_fatigue_genre_2025}, while the brain itself undergoes neuromotor compensation-sharpening finger-specific representations-during fatiguing motor tasks \cite{heimhofer2024finger}. By allowing for lighter, customizable actuation forces, next-generation analog switches present a vital mechanical intervention to mitigate these biomechanical degradations.
+These hardware trends also intersect with user health. Higher APM in esports has been associated with repetitive strain injuries and tendinopathies \cite{esports_tendinopathy, difrancisco2019managing, 1hp_esports_ergonomics}. Biomechanical studies report distinct fatigue patterns for keyboard and mouse interaction \cite{fatigue_flexor}, and repetitive clicking can degrade aiming accuracy while increasing forearm muscle load \cite{clicking_fatigue_ergonomics_2024}. High-APM genres are linked to elevated kinematic demand on wrist extensors \cite{wrist_fatigue_genre_2025}, with measurable neuromotor adaptation during fatiguing tasks \cite{heimhofer2024finger}. These findings motivate adaptive calibration that maintains responsiveness while reducing unintended actuation under fatigue.
 
 
 \section{Toward Adaptive Intent Detection}
-The long-term trajectory of this hardware evolution points toward systems that predict user intent before physical actuation occurs. Surface electromyography captures neuromuscular signals upstream of mechanical contact and has been used for low-latency intent detection~\cite{reactemg, lda_emg}; embedding a quantized TinyML model on the peripheral MCU would enable pre-report inference within a single 1\,ms polling interval~\cite{tinyml_mcu_inference, singh2023edge}. Both directions---sensor fusion with sEMG and on-device inference on RISC-V hardware---are outside the scope of this thesis and are deferred as future work (Section~\ref{sec:conclusion-fw}). The present contribution operates entirely in the offline analysis mode, using only the depth telemetry already recorded by the peripheral.
+One longer-term direction is intent inference before full mechanical actuation. Prior work on surface electromyography (sEMG) and embedded TinyML suggests this is technically plausible~\cite{reactemg, lda_emg, tinyml_mcu_inference, singh2023edge}. However, this thesis focuses on a narrower and directly evaluable scope: offline calibration from depth telemetry already produced by the peripheral. On-device inference is treated as future work (Section~\ref{sec:conclusion-fw}).
 
 \section{Thesis and Contributions}
-The core thesis of this work is that per-user biomechanical variation in click telemetry is structured enough to be automatically annotated, modeled, and exploited to derive better actuation parameters than static factory defaults. The contributions of this project are:
+The central hypothesis of this thesis is that per-user variation in click telemetry is structured enough to support automatic labeling, statistical modeling, and parameter optimization beyond static default settings. The contributions are:
 \begin{itemize}
     \item A programmatic labeling pipeline for analog HID click intent that derives
           frame-level \texttt{MAKE\_ONSET}, \texttt{CLICK\_HOLD}, and \texttt{BREAK\_ONSET}
@@ -112,15 +154,9 @@ Extended sessions lead to fatigue in the \textit{flexor digitorum superficialis}
     \item \textbf{Resting Weight Shift:} As the flexor muscles lose tonicity, the resting weight of the finger often increases, leading to deeper "resting" displacement in the analog sensor~\cite{heimhofer2024finger, 1hp_esports_ergonomics}.
 \end{enumerate}
 
-\section{On-Device Inference and TinyML}
+\section{On-Device Inference and TinyML (Scope Context)}
 
-Processing continuous telemetry at high polling rates (e.g., 8,000Hz) requires low-latency computation that cannot be achieved through standard OS-level drivers due to USB polling intervals and kernel scheduling~\cite{monaco_sok_2018}.
-
-\subsection{RISC-V and Vector Extensions}
-Modern high-performance peripherals utilize 32-bit MCUs based on the RISC-V architecture. Recent iterations include vector extensions that allow for parallel processing of telemetry arrays~\cite{tinyml_mcu_inference}. This hardware is capable of running "TinyML", quantized machine learning models (such as Linear Discriminant Analysis or lightweight LSTMs) that have been optimized for minimal memory and power footprints~\cite{tinyml_edge_2025, singh2023edge}.
-
-\subsection{Quantization and Latency}
-To maintain a sub-millisecond pipeline, ML models must undergo quantization, converting 32-bit floating-point weights into 8-bit integers (INT8). This reduction allows the MCU to perform ``pre-report'' inference---predicting if a movement is an intended click or a fatigue-induced tremor before the HID (Human Interface Device) report is even sent to the computer. This section establishes the hardware context for future on-device deployment. The current system operates in the offline analysis mode described in Chapter~\ref{chap:design}; the TinyML path represents the planned embedded inference stage.
+This thesis does not implement or evaluate on-device inference, but brief context is included to position future deployment constraints. Continuous telemetry at high polling rates imposes tight latency budgets that are difficult to satisfy through host-side software alone because of USB polling and OS scheduling behavior~\cite{monaco_sok_2018}. Recent peripheral MCUs, including RISC-V-class devices, are increasingly capable of quantized inference~\cite{tinyml_mcu_inference, tinyml_edge_2025, singh2023edge}. In principle, INT8 models could support pre-report filtering under sub-millisecond deadlines; in practice, validating this claim requires firmware-level access and hardware-in-the-loop measurement, which are out of scope for the present study.
 
 \section{Signal Processing and Optimisation Foundations}
 \label{sec:bg-methods}
@@ -144,6 +180,51 @@ Bayesian optimisation builds a probabilistic surrogate model of the objective fu
 
 
 %%%%%%%%%%%%%%%%
+\chapter{Related Work}
+%%%%%%%%%%%%%%%%%%%%%%
+
+This chapter surveys prior work across the five domains that the proposed system draws on and contributes to: adaptive threshold methods for HID devices, temporal sequence labeling from biosignals, programmatic labeling and weak supervision, dilated convolutional architectures for sequence modeling, and conditional random fields for sequence labeling.
+
+\section{Adaptive Threshold Methods for HID Devices}
+
+The problem of optimizing actuation parameters for human input devices has a long history in HCI, though prior approaches have relied on fixed heuristics rather than per-user learned models.
+
+Kim et al.~\cite{impact2018} introduced \emph{impact activation}, an alternative actuation scheme for mouse buttons in which a click is registered at the first contact force peak following a rapid finger descent, rather than at a fixed displacement threshold. Their evaluation showed faster reaction times and fewer double-click errors under time pressure. Importantly, impact activation still relies on a single fixed heuristic (the first force peak), making it unsuitable for users with atypical contact dynamics, and it does not adapt to within-session fatigue. This thesis learns thresholds from the user's own recorded telemetry rather than applying a globally fixed policy.
+
+Trewin~\cite{dynamic_keyboard} proposed the \emph{Dynamic Keyboard}, which automatically adjusts keyboard response parameters (minimum press duration, maximum bounce interval) to accommodate users with motor impairments, by observing an initial calibration sequence and adjusting parameters using rule-based adaptation. The Dynamic Keyboard targets binary on/off switch events and adjusts temporal debounce windows; it does not exploit continuous analog depth signals, and its adaptation rules are domain-expert heuristics rather than models trained from user data. The proposed system is complementary in motivation---both aim to reduce unintended actuations---but operates at a different signal level (continuous depth at 1\,kHz vs.\ binary event timing) and uses a data-driven model rather than hand-coded rules.
+
+To the best of our knowledge, peer-reviewed literature has not yet reported a complete learning-based pipeline for automatic joint tuning of Rapid Trigger (RT) and Actuation Level (AL). Current commercial implementations~\cite{wooting_rapid_trigger, logitech_superstrike_2026} primarily expose RT and AL as user-adjusted controls without closed-loop personalization. The joint CMA-ES optimizer in this thesis therefore positions RT/AL tuning as an explicitly optimized per-user objective rather than a manual configuration task.
+
+\section{Temporal Sequence Labeling in Biosignal Processing}
+
+Detecting click intent from continuous depth telemetry is an instance of temporal sequence labeling, a problem that has received substantial attention in the context of richer biosignals.
+
+Surface electromyography (sEMG) is the closest related modality. Wang et al.~\cite{reactemg} presented ReactEMG, which uses masked autoencoder pretraining on sEMG to achieve stable, low-latency intent detection from eight-channel surface electrode recordings. Antuvan and Masia~\cite{lda_emg} applied Linear Discriminant Analysis to simultaneous classification of wrist and finger movements from sEMG, demonstrating real-time throughput on embedded hardware. Both systems operate on multi-channel electrode signals that encode rich neuromuscular information before mechanical actuation occurs; their signal-to-noise advantage over single-sensor depth telemetry is substantial. The proposed system, by contrast, uses only the depth signal already present in the peripheral itself, requiring no additional sensing hardware. This imposes a harder classification problem---depth telemetry cannot observe pre-actuation motor intent---but removes the deployment barrier of wearable electrodes.
+
+Keystroke dynamics literature~\cite{typeformer2022, continuous_keystroke_mdpi} models typing patterns for biometric authentication from binary key event timestamps. TypeFormer~\cite{typeformer2022} applies a Transformer architecture to sequences of inter-key timings and achieves high verification accuracy on mobile devices. These methods treat the keystroke as an atomic event and model the temporal pattern between events; they do not model sub-millisecond intra-click dynamics. The proposed system operates at a finer granularity---frame-level classification at 1\,kHz---which requires a different feature engineering approach and exposes a different class of failure modes (contact-bounce artefacts, quantization noise) absent from binary event streams.
+
+\section{Weak Supervision and Programmatic Labeling}
+
+The geometric auto-labeler introduced in Section~\ref{sec:features} is an instance of the programmatic labeling framework introduced by Ratner et al.\ in Snorkel~\cite{ratner_snorkel_2020}. Snorkel defines \emph{labeling functions}---heuristic rules, distant supervision signals, or domain-expert logic---that each assign noisy labels to unlabeled examples, and combines them via a generative model that learns the accuracy and correlations of each labeling function. The combined label distribution is used as the training signal for a downstream discriminative model.
+
+The geometric auto-labeler in this thesis operates as a single labeling function: a depth-geometry heuristic that assigns \texttt{MAKE\_ONSET}, \texttt{CLICK\_HOLD}, \texttt{BREAK\_ONSET}, and \texttt{BG} labels by backward and forward search from hardware-reported click events. Unlike Snorkel, which combines multiple independent labeling functions and explicitly denoises their disagreements, the proposed system relies on a single labeling function and tasks the ML classifier with learning to correct its known systematic errors (timing bias, plateau ambiguity, missed onsets). Asymmetric soft labels---described in Section~\ref{sec:training}---encode the auto-labeler's directional timing uncertainty into the training signal rather than treating boundary labels as hard observations.
+
+\section{Dilated Convolutions for Sequence Modeling}
+
+The OfflineFCN architecture adapts the dilated causal convolution structure introduced by van den Oord et al.\ in WaveNet~\cite{van_den_oord_wavenet_2016} for raw audio generation. WaveNet stacks dilated causal convolutional layers with exponentially increasing dilation rates to achieve a large receptive field with manageable parameter counts. The dilation schedule $d_i = 2^i$ allows the stack to cover $\sum 2^i$ steps of context with $O(\log N)$ layers rather than the $O(N)$ layers that a fixed-dilation architecture would require.
+
+The OfflineFCN departs from WaveNet in one critical dimension: it uses symmetric (non-causal) padding rather than causal (left-only) padding. This doubles the effective receptive field per layer for the same kernel size, since context is drawn from both directions---enabling the $\pm$1530\,ms receptive field of Equation~\eqref{eq:rf} to be achieved with only 8 blocks. The trade-off is that the resulting model cannot be deployed for streaming inference, since each output depends on future samples. This is appropriate for the offline analysis mode but excludes the model from the on-device path described as future work.
+
+Temporal Convolutional Networks (TCN)~\cite{bai_tcn_2018} present an alternative parameterization of dilated convolutional sequence models for time-series tasks, using causal padding and residual connections similar to the OfflineFCN. TCNs have been shown to match or exceed LSTM performance on a range of sequence labeling tasks with lower training cost. The OfflineFCN's non-causal design is deliberately chosen over a TCN-style causal model because the offline analysis setting places no constraint on causality, and the doubled receptive field provides stronger temporal context for click boundary detection. A causal TCN variant would be the natural architectural choice if on-device streaming inference were required.
+
+\section{Conditional Random Fields for Sequence Labeling}
+
+The CRF output layer follows the formulation of Lafferty, McCallum, and Pereira~\cite{lafferty_crf_2001}, who introduced CRFs as discriminative probabilistic models for segmenting and labeling sequence data. A linear-chain CRF defines a conditional distribution $p(\mathbf{y}|\mathbf{X})$ that decomposes into per-frame emission scores and pairwise transition scores, optimised jointly to maximise the conditional log-likelihood of the label sequence. Viterbi decoding recovers the globally optimal label sequence in $O(T \cdot |\mathcal{Y}|^2)$ time.
+
+CRFs have been widely applied to sequence labeling in natural language processing and to biosignal segmentation. In the proposed system, the key benefit of the CRF over per-frame argmax decoding is constraint enforcement: the learned transition matrix assigns strongly negative scores to physically impossible label transitions such as \texttt{BREAK\_ONSET} immediately following \texttt{BG} (a break without a prior make). Per-frame softmax cannot enforce these structural constraints, leading to fragmented or inverted label sequences under conditions of high class imbalance or low posterior confidence. The CRF wrapper adds this constraint at inference time without modifying the backbone architecture or retraining procedure.
+
+
+%%%%%%%%%%%%%%%%%%%%
 \chapter{Design}
 \label{chap:design}
 %%%%%%%%%%%%%%%%
@@ -217,12 +298,13 @@ Native C++ daemons handle device I/O, raw frame capture, binary frame decoding, 
   \centering
   \begin{tikzpicture}[
     font=\small,
-    sig/.style={draw, rounded corners=3pt, minimum width=1.9cm, minimum height=0.65cm,
-                align=center, fill=white},
-    op/.style={draw=gray!70, rounded corners=2pt, minimum width=2.8cm, minimum height=0.65cm,
-               align=center, font=\scriptsize, fill=gray!10},
-    arr/.style={-{Stealth[length=4pt]}, thick},
-    node distance=0.45cm and 0.7cm,
+    scale=0.85,
+    sig/.style={draw, rounded corners=2pt, minimum width=1.6cm, minimum height=0.5cm,
+                align=center, fill=white, font=\scriptsize},
+    op/.style={draw=gray!70, rounded corners=2pt, minimum width=2.3cm, minimum height=0.5cm,
+               align=center, font=\tiny, fill=gray!10},
+    arr/.style={-{Stealth[length=3pt]}, thick},
+    node distance=0.3cm and 0.6cm,
   ]
     % Raw input
     \node[sig, fill=gray!15] (raw) {raw step120};
@@ -263,7 +345,7 @@ Native C++ daemons handle device I/O, raw frame capture, binary frame decoding, 
     \node[font=\scriptsize\itshape, below=0.15cm of driftop, text=gray]
         {(causal EMA — on-device compatible)};
   \end{tikzpicture}
-  \caption{Signal processing pipeline. Speed uses a Makima $2\!\times$ superresolution scheme; acceleration is the analytic second derivative of the Akima spline (not differentiated from speed); drift uses causal EMAs and is the only channel compatible with streaming on-device inference.}
+  \caption{Signal processing pipeline. Speed uses Makima upsampling; acceleration is the analytic second derivative; drift uses causal EMAs (on-device compatible).}
   \label{fig:pipeline}
 \end{figure}
 
@@ -277,9 +359,9 @@ Analog channels are normalized to $[0,1]$ before entering the machine-learning p
 
 \subsection{Contact-Bounce Suppression}
 
-Every make/break transition in the raw signal contains a short window of contact-bounce artefacts—sub-millisecond oscillations caused by the physical settling of the inductive coil or magnetic plunger. Left unaddressed, these corrupt velocity and acceleration estimates immediately after each transition, generating spurious onset signals.
+Contact-bounce transients are sub-millisecond oscillations from inductive coil or magnetic plunger settling. These corrupt velocity and acceleration estimates immediately after each transition. 
 
-The \emph{blind window} mechanism masks the $W_b$ frames following each detected transition and replaces them with a natural cubic spline interpolated from $W_c$ context frames sampled symmetrically around the gap. The spline is solved for second derivatives using the standard tridiagonal Thomas algorithm, then evaluated at each masked frame position. This preserves the smooth trajectory the finger is executing while eliminating the high-frequency settling transient. Both $W_b$ and $W_c$ default to zero (disabled), allowing opt-in per session when bounce is measurable in the raw telemetry.
+The \emph{blind window} mechanism masks the $W_b$ frames following detected transitions and fills them via cubic spline interpolation from $W_c$ context frames. The spline is solved using the tridiagonal Thomas algorithm. Both $W_b$ and $W_c$ default to zero (disabled), allowing opt-in per session when bounce is measurable in raw telemetry.
 
 \section{Signal Processing Pipeline}
 
@@ -412,13 +494,13 @@ CRF (on FCN) & Raw $[C{\times}T]$ & ${\pm}\,1530$\,ms & 20--120\,s & Viterbi \\
 \end{table}
 
 \paragraph{Random Forest.}
-A Random Forest~\cite{breiman_rf_2001} of 100 estimators with maximum depth 12 and minimum leaf size 4 is trained on the hand-crafted feature matrix. RF is the default model for three reasons: it trains deterministically in under one second, provides well-calibrated posterior probabilities without label smoothing, and is robust to irrelevant features through random subspace selection at each split. Class imbalance is handled via inverse-frequency weighting (\texttt{class\_weight=`balanced'} in scikit-learn), which reweights the bootstrap sample seen by each tree so that the effective class prior is uniform.
+A Random Forest~\cite{breiman_rf_2001} of 100 estimators (configured in \texttt{random\_forest.py:RandomForestConfig}) with maximum depth 12, minimum leaf size 4, and feature subsampling strategy \texttt{sqrt} is trained on the hand-crafted feature matrix using scikit-learn. RF is the default model for three reasons: it trains deterministically in under one second on a 5-minute session, provides well-calibrated posterior probabilities without label smoothing, and is robust to irrelevant features through random subspace selection at each split. Class imbalance is handled via inverse-frequency weighting (\texttt{class\_weight=`balanced'}), which reweights the bootstrap sample seen by each tree so that the effective class prior is uniform, scaling rare onset frames by $\tfrac{\mathrm{n\_samples}}{\mathrm{n\_classes} \cdot \mathrm{count}[\mathrm{class}]}$ relative to background frames.
 
 \paragraph{Gradient Boosted Trees.}
-A LightGBM~\cite{ke_lightgbm_2017} gradient boosted classifier with 500 boosting rounds, learning rate 0.05, 31 leaves, and early stopping on held-out validation loss (patience 50 rounds) is trained on the same feature matrix. Unlike RF, sequential boosting corrects the residual of the current ensemble at each round, achieving lower bias at the cost of greater sensitivity to hyperparameters. GBT is preferred over RF when probability calibration is critical: its gradient-descent training exposes a custom differentiable objective, enabling the asymmetric soft-label loss (Section~\ref{sec:training}) to be optimised end-to-end. By contrast, RF converts soft targets to hard labels before tree-fitting, discarding the distributional information in the soft targets.
+A LightGBM~\cite{ke_lightgbm_2017} gradient boosted classifier (configured in \texttt{gradient\_boosted.py:GradientBoostedConfig}) with 500 boosting rounds, learning rate 0.05, 31 leaves, minimum data per leaf 20, and early stopping on held-out validation loss (patience 50 rounds) is trained on the same feature matrix. Unlike RF, sequential boosting corrects the residual of the current ensemble at each round, achieving lower bias at the cost of greater sensitivity to hyperparameters. GBT is preferred over RF when probability calibration is critical: its gradient-descent training exposes a custom differentiable objective, enabling the asymmetric soft-label loss (Section~\ref{sec:training}) to be optimised end-to-end via custom objectives \texttt{soft\_multiclass\_objective} and \texttt{focal\_multiclass\_objective} defined in the training pipeline. By contrast, RF converts soft targets to hard labels before tree-fitting, discarding the distributional information in the soft targets and limiting its ability to learn from the directional timing uncertainty that soft labels encode.
 
 \paragraph{OfflineFCN.}
-The OfflineFCN is a fully-convolutional dilated residual network~\cite{van_den_oord_wavenet_2016} operating directly on the raw 4-channel telemetry $\mathbf{X} \in \mathbb{R}^{4 \times T}$:
+The OfflineFCN is a fully-convolutional dilated residual network~\cite{van_den_oord_wavenet_2016} operating directly on the raw 4-channel telemetry $\mathbf{X} \in \mathbb{R}^{4 \times T}$ (implemented in \texttt{fcn.py:FCNModel}):
 \begin{equation}
     \hat{\mathbf{Y}} = \mathrm{Classifier}\!\left(\mathcal{B}_7 \circ \cdots \circ \mathcal{B}_0\!\left(\mathrm{InputProj}(\mathbf{X})\right)\right)
     \label{eq:fcn}
@@ -433,9 +515,7 @@ Symmetric padding keeps output length equal to input length at every layer; the 
     \mathrm{RF} = 2\,(k-1)\!\sum_{i=0}^{7} 2^i = 2 \times 6 \times 255 = 3060 \text{ frames} = \pm 1530\,\text{ms}
     \label{eq:rf}
 \end{equation}
-Each output frame has access to $\pm 1530$\,ms of temporal context—enough to observe a full pre-press approach and the complete post-release return in one forward pass. This is qualitatively different from the 32\,ms hand-crafted window: the FCN can learn to use the slow resting-drift signal hundreds of milliseconds before an onset as a predictor of imminent actuation, a feature that no fixed short window can represent.
-
-The OfflineFCN uses symmetric (non-causal) padding at every layer and is therefore restricted to the offline analysis path. On-device streaming inference would require a causal variant (left-only padding); for the same parameter budget, this reduces the per-layer receptive field contribution by half.
+Each output frame has access to $\pm 1530$\,ms of temporal context—enough to observe a full pre-press approach and the complete post-release return in one forward pass. This is qualitatively different from the 32\,ms hand-crafted window: the FCN can learn to use the slow resting-drift signal hundreds of milliseconds before an onset as a predictor of imminent actuation, a feature that no fixed short window can represent. The model trains with focal BCE loss ($\gamma = 2.0$) on 3-channel heatmap targets (make-onset, break-onset, hold-state), allowing soft onset detection independent of background suppression.
 
 \paragraph{CRF sequence decoder.}
 The CRF output layer~\cite{lafferty_crf_2001} wraps the OfflineFCN and replaces per-frame softmax decoding with Viterbi inference over a learned transition model:
@@ -459,7 +539,7 @@ where $\hat{p}_{y_t}[t]$ is the predicted probability for the true class at fram
 \paragraph{Asymmetric soft labels.}
 Hard binary labels at the geometric onset frame create a training discontinuity: adjacent frames on opposite sides of the boundary are nearly identical in feature space yet receive opposing hard labels, causing instability and sensitivity to auto-labeler timing errors. Replacing hard targets with per-class Gaussian soft labels of width $\sigma$ frames smooths each boundary into a probability ramp.
 
-The system uses \emph{asymmetric} Gaussians: left-side decay $\sigma_\mathrm{left}$ and right-side decay $\sigma_\mathrm{right}$ are independently configurable for both \texttt{MAKE\_ONSET} and \texttt{BREAK\_ONSET}. For \texttt{MAKE\_ONSET}, a narrow right-side sigma ($\sigma_{\mathrm{right},m}$) reflects the sharp downward acceleration immediately following press intent, while a wider left-side sigma ($\sigma_{\mathrm{left},m}$) absorbs timing uncertainty introduced by the auto-labeler's backward search. For \texttt{BREAK\_ONSET}, approximately symmetric sigmas are appropriate since releases are physically more gradual. Residual probability mass is absorbed by the \texttt{BG} class, ensuring the soft-label distribution sums to 1 at each frame.
+The system uses \emph{asymmetric} Gaussians (implemented in \texttt{click\_intent/data.py:\_soft\_single\_channel()}): left-side decay $\sigma_\mathrm{left}$ and right-side decay $\sigma_\mathrm{right}$ are independently configurable for both \texttt{MAKE\_ONSET} and \texttt{BREAK\_ONSET}. For \texttt{MAKE\_ONSET}, a narrow right-side sigma ($\sigma_{\mathrm{right},m}$, typically 5\,ms) reflects the sharp downward acceleration immediately following press intent, while a wider left-side sigma ($\sigma_{\mathrm{left},m}$, typically 15\,ms) absorbs timing uncertainty introduced by the auto-labeler's backward search (Section~\ref{sec:auto-label}). For \texttt{BREAK\_ONSET}, approximately symmetric sigmas (typically $\sigma_{\mathrm{left},b} = \sigma_{\mathrm{right},b} = 10\,\text{ms}$) are appropriate since releases are physically more gradual. Residual probability mass is absorbed by the \texttt{BG} class via normalisation, ensuring the soft-label distribution sums exactly to 1.0 at each frame. This per-class asymmetry is a deliberate model of the \emph{directional timing bias} of the geometric labeling heuristic: the auto-labeler's backward-search strategy biases make-onset labels early, while release detection is more symmetric. The LightGBM model trains directly on these soft distributions via custom objectives (\texttt{soft\_multiclass\_objective}, \texttt{focal\_multiclass\_objective}), learning to exploit the distributional structure without hard-label quantisation.
 
 \paragraph{Session-level training and temporal split.}
 Splitting a time-series at a random frame introduces data leakage: the model's receptive field straddles the split boundary, exposing future context from the validation set during training. The training protocol instead splits by \emph{click boundary}: clicks $1$ through $N_\mathrm{train}$ form the training set, and clicks $N_\mathrm{train} + 1$ through $N_\mathrm{total}$ form the validation set, preserving temporal ordering and isolating the validation clicks from all training gradients. The default split ratio is 80/20 ($N_\mathrm{train} = \lfloor 0.8\, N_\mathrm{total} \rfloor$), matching the evaluation protocol in Chapter~\ref{chap:eval}.
@@ -560,7 +640,7 @@ The system is realised as five cooperating processes spanning four programming l
     \draw[arr] (python)   -- node[right=2pt, font=\scriptsize]       {JSON-line stdin/stdout}    (electron);
     \draw[arr] (rust)     -- node[above=2pt, font=\scriptsize]       {JSON-line stdin/stdout}    (electron);
   \end{tikzpicture}
-  \caption{Five-process topology. Double-headed arrows denote bidirectional IPC; protocol and language are labelled per edge. The Rust optimizer runs as a pool of four concurrent workers; the Python service runs as a single persistent daemon with per-job threading.}
+  \caption{Five-process topology. Arrows denote bidirectional IPC. Rust optimizer uses four concurrent workers; Python service is a persistent daemon.}
   \label{fig:topology}
 \end{figure}
 
@@ -733,23 +813,20 @@ Table~\ref{tab:classifier} reports per-class F1 for all four models averaged ove
 
 \begin{table}[t]
 \centering
-\begin{tabular}{lrrrr}
+\begin{tabular}{l*{4}{r}}
 \toprule
-Model & MAKE\_ONSET F1 & CLICK\_HOLD F1 & BREAK\_ONSET F1 & Macro-F1 \\
+Model & Make & Hold & Break & Macro \\
 \midrule
-Velocity-threshold rule & ---   & ---   & ---   & ---  \\
-Geometric auto-labeler  & ---   & ---   & ---   & ---  \\
+Velocity rule & --- & --- & --- & --- \\
+Auto-labeler  & --- & --- & --- & --- \\
 \midrule
-Random Forest       & ---   & ---   & ---   & ---  \\
-Gradient Boosted    & ---   & ---   & ---   & ---  \\
-OfflineFCN          & ---   & ---   & ---   & ---  \\
-CRF + FCN           & ---   & ---   & ---   & ---  \\
+RF       & --- & --- & --- & --- \\
+GBT    & --- & --- & --- & --- \\
+FCN          & --- & --- & --- & --- \\
+CRF+FCN           & --- & --- & --- & --- \\
 \bottomrule
 \end{tabular}
-\caption{Per-class F1 on held-out validation partitions, averaged across all sessions.
-  The velocity-threshold rule is a label-independent baseline; the geometric
-  auto-labeler baseline measures self-consistency (see~\S\ref{sec:baselines}).
-  Dashes indicate results pending experimental completion.}
+\caption{Per-class F1 on validation partitions. Auto-labeler measures self-consistency; dashes indicate pending experimental completion.}
 \label{tab:classifier}
 \end{table}
 
@@ -909,85 +986,36 @@ The 32 external benchmark recordings span a range of users and devices but were 
 
 
 %%%%%%%%%%%%%%%%%%%%%%
-\chapter{Related Work}
-%%%%%%%%%%%%%%%%%%%%%%
-
-This chapter surveys prior work across the five domains that the proposed system draws on and contributes to: adaptive threshold methods for HID devices, temporal sequence labeling from biosignals, programmatic labeling and weak supervision, dilated convolutional architectures for sequence modeling, and conditional random fields for sequence labeling.
-
-\section{Adaptive Threshold Methods for HID Devices}
-
-The problem of optimizing actuation parameters for human input devices has a long history in HCI, though prior approaches have relied on fixed heuristics rather than per-user learned models.
-
-Kim et al.~\cite{impact2018} introduced \emph{impact activation}, an alternative actuation scheme for mouse buttons in which a click is registered at the first contact force peak following a rapid finger descent, rather than at a fixed displacement threshold. Their evaluation showed faster reaction times and fewer double-click errors under time pressure. Importantly, impact activation still relies on a single fixed heuristic (the first force peak), making it unsuitable for users with atypical contact dynamics, and it does not adapt to within-session fatigue. This thesis learns thresholds from the user's own recorded telemetry rather than applying a globally fixed policy.
-
-Trewin~\cite{dynamic_keyboard} proposed the \emph{Dynamic Keyboard}, which automatically adjusts keyboard response parameters (minimum press duration, maximum bounce interval) to accommodate users with motor impairments, by observing an initial calibration sequence and adjusting parameters using rule-based adaptation. The Dynamic Keyboard targets binary on/off switch events and adjusts temporal debounce windows; it does not exploit continuous analog depth signals, and its adaptation rules are domain-expert heuristics rather than models trained from user data. The proposed system is complementary in motivation---both aim to reduce unintended actuations---but operates at a different signal level (continuous depth at 1\,kHz vs.\ binary event timing) and uses a data-driven model rather than hand-coded rules.
-
-No prior published work automates the tuning of Rapid Trigger (RT) and Actuation Level (AL) parameters using machine learning. Current commercial implementations~\cite{wooting_rapid_trigger, logitech_superstrike_2026} expose RT and AL as user-adjusted sliders with no in-loop learning component. The joint CMA-ES optimizer proposed here is, to the best of the author's knowledge, the first data-driven system that treats RT/AL tuning as a formal optimization problem with a per-user training signal.
-
-\section{Temporal Sequence Labeling in Biosignal Processing}
-
-Detecting click intent from continuous depth telemetry is an instance of temporal sequence labeling, a problem that has received substantial attention in the context of richer biosignals.
-
-Surface electromyography (sEMG) is the closest related modality. Wang et al.~\cite{reactemg} presented ReactEMG, which uses masked autoencoder pretraining on sEMG to achieve stable, low-latency intent detection from eight-channel surface electrode recordings. Antuvan and Masia~\cite{lda_emg} applied Linear Discriminant Analysis to simultaneous classification of wrist and finger movements from sEMG, demonstrating real-time throughput on embedded hardware. Both systems operate on multi-channel electrode signals that encode rich neuromuscular information before mechanical actuation occurs; their signal-to-noise advantage over single-sensor depth telemetry is substantial. The proposed system, by contrast, uses only the depth signal already present in the peripheral itself, requiring no additional sensing hardware. This imposes a harder classification problem---depth telemetry cannot observe pre-actuation motor intent---but removes the deployment barrier of wearable electrodes.
-
-Keystroke dynamics literature~\cite{typeformer2022, continuous_keystroke_mdpi} models typing patterns for biometric authentication from binary key event timestamps. TypeFormer~\cite{typeformer2022} applies a Transformer architecture to sequences of inter-key timings and achieves high verification accuracy on mobile devices. These methods treat the keystroke as an atomic event and model the temporal pattern between events; they do not model sub-millisecond intra-click dynamics. The proposed system operates at a finer granularity---frame-level classification at 1\,kHz---which requires a different feature engineering approach and exposes a different class of failure modes (contact-bounce artefacts, quantization noise) absent from binary event streams.
-
-\section{Weak Supervision and Programmatic Labeling}
-
-The geometric auto-labeler introduced in Section~\ref{sec:features} is an instance of the programmatic labeling framework introduced by Ratner et al.\ in Snorkel~\cite{ratner_snorkel_2020}. Snorkel defines \emph{labeling functions}---heuristic rules, distant supervision signals, or domain-expert logic---that each assign noisy labels to unlabeled examples, and combines them via a generative model that learns the accuracy and correlations of each labeling function. The combined label distribution is used as the training signal for a downstream discriminative model.
-
-The geometric auto-labeler in this thesis operates as a single labeling function: a depth-geometry heuristic that assigns \texttt{MAKE\_ONSET}, \texttt{CLICK\_HOLD}, \texttt{BREAK\_ONSET}, and \texttt{BG} labels by backward and forward search from hardware-reported click events. Unlike Snorkel, which combines multiple independent labeling functions and explicitly denoises their disagreements, the proposed system relies on a single labeling function and tasks the ML classifier with learning to correct its known systematic errors (timing bias, plateau ambiguity, missed onsets). Asymmetric soft labels---described in Section~\ref{sec:training}---encode the auto-labeler's directional timing uncertainty into the training signal rather than treating boundary labels as hard observations.
-
-\section{Dilated Convolutions for Sequence Modeling}
-
-The OfflineFCN architecture adapts the dilated causal convolution structure introduced by van den Oord et al.\ in WaveNet~\cite{van_den_oord_wavenet_2016} for raw audio generation. WaveNet stacks dilated causal convolutional layers with exponentially increasing dilation rates to achieve a large receptive field with manageable parameter counts. The dilation schedule $d_i = 2^i$ allows the stack to cover $\sum 2^i$ steps of context with $O(\log N)$ layers rather than the $O(N)$ layers that a fixed-dilation architecture would require.
-
-The OfflineFCN departs from WaveNet in one critical dimension: it uses symmetric (non-causal) padding rather than causal (left-only) padding. This doubles the effective receptive field per layer for the same kernel size, since context is drawn from both directions---enabling the $\pm$1530\,ms receptive field of Equation~\eqref{eq:rf} to be achieved with only 8 blocks. The trade-off is that the resulting model cannot be deployed for streaming inference, since each output depends on future samples. This is appropriate for the offline analysis mode but excludes the model from the on-device path described as future work.
-
-Temporal Convolutional Networks (TCN)~\cite{bai_tcn_2018} present an alternative parameterization of dilated convolutional sequence models for time-series tasks, using causal padding and residual connections similar to the OfflineFCN. TCNs have been shown to match or exceed LSTM performance on a range of sequence labeling tasks with lower training cost. The OfflineFCN's non-causal design is deliberately chosen over a TCN-style causal model because the offline analysis setting places no constraint on causality, and the doubled receptive field provides stronger temporal context for click boundary detection. A causal TCN variant would be the natural architectural choice if on-device streaming inference were required.
-
-\section{Conditional Random Fields for Sequence Labeling}
-
-The CRF output layer follows the formulation of Lafferty, McCallum, and Pereira~\cite{lafferty_crf_2001}, who introduced CRFs as discriminative probabilistic models for segmenting and labeling sequence data. A linear-chain CRF defines a conditional distribution $p(\mathbf{y}|\mathbf{X})$ that decomposes into per-frame emission scores and pairwise transition scores, optimised jointly to maximise the conditional log-likelihood of the label sequence. Viterbi decoding recovers the globally optimal label sequence in $O(T \cdot |\mathcal{Y}|^2)$ time.
-
-CRFs have been widely applied to sequence labeling in natural language processing and to biosignal segmentation. In the proposed system, the key benefit of the CRF over per-frame argmax decoding is constraint enforcement: the learned transition matrix assigns strongly negative scores to physically impossible label transitions such as \texttt{BREAK\_ONSET} immediately following \texttt{BG} (a break without a prior make). Per-frame softmax cannot enforce these structural constraints, leading to fragmented or inverted label sequences under conditions of high class imbalance or low posterior confidence. The CRF wrapper adds this constraint at inference time without modifying the backbone architecture or retraining procedure.
-
-
-%%%%%%%%%%%%%%%%%%%%
 \chapter{Conclusion}
 %%%%%%%%%%%%%%%%%%%%
 
 \section{Summary}
 
-This thesis presented an offline adaptive calibration system for analog peripherals equipped with continuous depth-sensing hardware. The system addresses a fundamental limitation of current gaming peripheral firmware: static, manually-configured actuation thresholds that cannot account for per-user biomechanical variation, device-to-device sensor differences, or within-session neuromotor fatigue.
+This thesis presented an offline adaptive calibration pipeline for analog peripherals with continuous depth sensing. The work addresses a practical limitation of current firmware: static actuation thresholds that do not adapt to per-user biomechanics, device variability, or within-session fatigue.
 
-Three concrete contributions were developed:
+The main contributions are:
 
 \begin{itemize}
-    \item A \textbf{programmatic labeling pipeline} that derives frame-level
+        \item A \textbf{programmatic labeling pipeline} that derives frame-level
           \texttt{MAKE\_ONSET}, \texttt{CLICK\_HOLD}, and \texttt{BREAK\_ONSET}
-          annotations from raw 1\,kHz depth telemetry without any manual annotation.
-          A geometric heuristic---using backward and forward search from hardware-reported
-          click events---serves as the weak supervision source; asymmetric soft labels
-          encode directional timing uncertainty into the training signal, correcting for the
-          heuristic's known failure modes.
+            annotations from raw 1\,kHz depth telemetry without manual frame labeling.
+            A geometric weak-supervision heuristic is combined with asymmetric soft labels
+            to model directional timing uncertainty at boundaries.
 
-    \item A \textbf{four-class temporal sequence classifier} with two model paths. The
+        \item A \textbf{four-class temporal sequence classifier} with two model paths. The
           shallow path (Random Forest, Gradient Boosted Trees) operates on hand-crafted
-          sliding-window features and trains in under one second per session, enabling
-          real-time per-session retraining. The deep path (dilated residual FCN, CRF
-          decoder) operates on raw four-channel telemetry with a learned
-          $\pm$1530\,ms receptive field, providing superior temporal context at the cost
-          of longer training time.
+            sliding-window features and supports rapid per-session retraining. The deep path
+            (dilated residual FCN with CRF decoding) operates on raw four-channel telemetry
+            with a learned $\pm$1530\,ms receptive field, trading higher context for higher
+            compute cost.
 
     \item A \textbf{joint CMA-ES optimizer} that simulates the peripheral firmware's
           Rapid Trigger state machine frame-by-frame and finds Pareto-optimal (AL, RT)
-          configurations minimizing actuation latency subject to a false-positive
-          constraint. The optimizer replaces manual threshold tuning with a data-driven
-          trade-off curve, exposing the recall--latency frontier directly to the user.
+          configurations under latency and false-positive objectives, replacing manual
+          threshold sweeps with a data-driven trade-off analysis.
 \end{itemize}
 
-These contributions together enable a workflow that was previously impossible: a user records a gaming session, the system automatically annotates click intent from the telemetry, trains a per-user classifier, simulates the firmware across hundreds of (AL, RT) candidates, and recommends an optimal configuration---all without any manual labeling or expert intervention.
+In aggregate, these components provide an end-to-end workflow in which a user recording can be automatically labeled, modeled, and optimized to produce evidence-based AL/RT recommendations with minimal manual intervention.
 
 \section{Limitations}
 \label{sec:limitations}
