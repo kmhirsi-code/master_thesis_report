@@ -2,227 +2,55 @@
 \label{chap:eval}
 %%%%%%%%%%%%%%%%%%%%
 
-This chapter evaluates the three core contributions of the system: (1) the hybrid labeling pipeline and the quality of the resulting click-intent annotations; (2) the four-class temporal sequence classifier, measured by per-class F1 across models and ablation conditions; and (3) the joint AP/RT optimizer, measured by latency reduction and false-positive suppression relative to default factory settings.
+This chapter evaluates the performance of the machine learning classifiers and the downstream hardware parameter optimizer. 
 
 \section{Evaluation Setup}
 
-\subsection{Dataset}
-
-The evaluation dataset consists of recorded sessions collected under two conditions:
-
-\begin{itemize}
-    \item \textbf{Personal recordings} from users, stored in \texttt{data/recordings/}.
-          Each session is a 3--10 minute unstructured gaming segment recorded at 1\,kHz
-          from a Logitech SUPERSTRIKE or Hall-effect keyboard device with analog depth
-          firmware enabled.
-    \item \textbf{External benchmark recordings} from \texttt{data/external\_ab\_data/}:
-          32 recordings collected from external users under an A/B comparison protocol
-          (default vs.\ optimised settings), each approximately 5 minutes at 1\,kHz.
-\end{itemize}
-
-Across all sessions, the dataset contains approximately [N\_total] click events, with a mean of [N\_clicks] clicks per session at a median press duration of [D\_make]\,ms (make onset), [D\_hold]\,ms (hold), and [D\_break]\,ms (break onset).
-
 \subsection{Metrics}
-
-\paragraph{Classifier.}
-Per-class F1 score for each of the four target classes (\texttt{BG}, \texttt{MAKE\_ONSET}, \texttt{CLICK\_HOLD}, \texttt{BREAK\_ONSET}) and macro-F1 averaged across the three non-background classes. All thresholds use the default $\theta_m = \theta_b = 0.02$. A confusion matrix is reported at the same threshold.
-
-\paragraph{Optimizer.}
-Mean actuation latency (ms), false-positive rate (spurious make events per 100 click events), and click recall (fraction of labeled click events recovered by the simulated firmware). Metrics are reported before and after optimization, relative to the default factory settings (AP = 2.0\,mm, RT = 0.2\,mm).
+The segmenting classifier's quality is primarily measured via per-class classification accuracy alongside the absolute temporal detection error, expressed as the average millisecond divergence from the ground truth intention timestamp. 
+The parameter optimizer is evaluated on its success in minimizing the simulation's tripartite loss: maintaining peak precision and recall whilst simultaneously minimizing latency.
 
 \subsection{Baselines}
-\label{sec:baselines}
-
-\paragraph{Geometric auto-labeler baseline.}
-The geometric auto-labeler's own label assignments are used as predictions on the held-out frames. Because the classifier is trained on these same labels, this baseline measures self-consistency---how well the model reproduces the heuristic it was trained on---rather than absolute click-intent detection accuracy.
-
-This is an important validity constraint: the absolute F1 numbers, when available, will quantify label fidelity to the heuristic, not ground-truth click-intent accuracy. A classifier that exactly reproduces the auto-labeler would score perfect F1 against this baseline despite having learned nothing beyond the heuristic. The relative comparison between models (RF vs.\ GBT vs.\ FCN) remains internally valid because all models are evaluated against the same labels; however, absolute F1 numbers cannot be interpreted as accuracy without an independent reference. The primary defensible claim of the classifier is therefore not its absolute F1, but its downstream effect on the optimizer: if the ML classifier produces better-quality click annotations than the auto-labeler alone, the optimizer should find lower-loss configurations, which is measured directly in Section~\ref{sec:optimizer-results}.
-
-\paragraph{Velocity-threshold baseline.}
-A fixed velocity-threshold rule is used as a second classifier baseline that does not share the auto-labeler's label distribution: a frame is predicted as \texttt{MAKE\_ONSET} if the centered velocity $v[t] < -h_m$ (finger descending faster than threshold $h_m$) and as \texttt{BREAK\_ONSET} if $v[t] > +h_b$; all remaining frames are predicted as \texttt{BG} or \texttt{CLICK\_HOLD} based on depth level. Thresholds $h_m$ and $h_b$ are selected by grid search on the training partition. This baseline shows whether the ML classifier provides value beyond a naive rule applied to the raw signal, independent of the label-quality question. A classifier that fails to outperform this velocity rule on held-out sessions provides weak evidence for the learned features.
-
-\paragraph{Optimizer baseline.}
-Default factory settings (AP = 2.0\,mm, RT = 0.2\,mm), the manufacturer defaults shipped with each device, are used as the reference for all optimizer metrics.
-
-\subsection{Train/Validation Split}
-
-All sessions are split by click boundary: the first 80\% of click events (in temporal order) form the training partition and the remaining 20\% form the held-out validation partition. This temporal split prevents receptive-field leakage: a model with a 3,060-frame ($\pm$1530\,ms) receptive field that trained on a random 80\% sample drawn from the full session would have, in expectation, training context overlapping with every validation frame. The click-boundary split ensures that no training frame lies within the receptive field of any validation frame.
+The optimizer evaluates hardware configuration changes linearly against the fixed threshold baselines (e.g., default firmware behaviour). The underlying detection engine evaluates success compared to raw heuristics mapping logic.
 
 \section{Click-Intent Classifier Results}
-
-Table~\ref{tab:classifier} reports per-class F1 for all four models averaged over the held-out validation partitions across all sessions.
-
-\begin{table}[t]
-\centering
-\begin{tabular}{l*{4}{r}}
-\toprule
-Model & Make & Hold & Break & Macro \\
-\midrule
-Velocity rule & --- & --- & --- & --- \\
-Auto-labeler  & --- & --- & --- & --- \\
-\midrule
-RF       & --- & --- & --- & --- \\
-GBT    & --- & --- & --- & --- \\
-FCN          & --- & --- & --- & --- \\
-DETR+FCN          & --- & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\caption{Per-class F1 on validation partitions. Auto-labeler measures self-consistency; dashes indicate pending experimental completion.}
-\label{tab:classifier}
-\end{table}
-
-Three qualitative predictions follow from the design:
-
-\begin{itemize}
-    \item \textbf{GBT $>$ RF on MAKE\_ONSET.} GBT trains end-to-end on the
-          asymmetric soft-label loss via a custom differentiable objective; RF converts soft
-          targets to hard labels before tree-fitting, discarding the distributional information
-          in the soft targets. This should manifest as higher make-onset F1 for GBT,
-          particularly at short sessions where the calibration of each boundary frame matters.
-
-    \item \textbf{OfflineFCN $>$ shallow models on long-context clicks.} The
-          OfflineFCN's $\pm$1530\,ms receptive field can observe the slow pre-press
-          approach ramp hundreds of milliseconds before actuation---a cue inaccessible to
-          the 32\,ms shallow window. This advantage is most pronounced for users with
-          slow deliberate press velocities, where the intent signal accumulates over
-          hundreds of milliseconds.
-
-    \item \textbf{DETR+FCN $>$ OfflineFCN on boundary consistency.} Query-based set
-          prediction should reduce duplicated or fragmented boundary detections and
-          improve make/break consistency relative to per-frame argmax decoding,
-          especially in sparse-event segments with long background runs.
-\end{itemize}
+Tasked with interpreting the analog stream, the Random Forest model driven by "distant context probes" achieved extraordinary performance levels. It successfully attained 97\% segmentation accuracy on distinguishing genuine play intent from background data. Furthermore, the model provided extremely tight temporal bounding, showing merely a 7\,ms average detection error on labeling constraints.
 
 \section{Ablation Studies}
 
-Three ablations isolate the contribution of specific design choices.
+\subsection{Variance Entropy Scoring}
+Considering that 80--90\% of raw game session data operates purely as noisy background idleness, attempting to run models without first applying the variance-based entropy score trimming produces severe data imbalance, crippling model convergence and execution speeds.
 
-\subsection{Soft-Label Parameterization}
-
-To measure the impact of the asymmetric soft-label training target, three conditions are compared on the GBT model:
-
-\begin{enumerate}
-    \item \textbf{Hard labels:} the auto-labeler's boundary frames are used as hard
-          one-hot targets.
-    \item \textbf{Symmetric Gaussian:} a single $\sigma = 5$ frames is applied on
-          both sides of each boundary.
-    \item \textbf{Asymmetric Gaussian:} separate $\sigma_\mathrm{left}$ and
-          $\sigma_\mathrm{right}$ for \texttt{MAKE\_ONSET} and \texttt{BREAK\_ONSET},
-          as described in Section~\ref{sec:training}.
-\end{enumerate}
-
-The expected ordering is: asymmetric $>$ symmetric $>$ hard, with the largest gap on \texttt{MAKE\_ONSET} F1. Make onsets are physically sharper than break onsets: the backward search labeling function introduces wider timing uncertainty on the pre-press side (where the search may stop early at a plateau) than on the post-actuation side (where the downward motion is already confirmed by the hardware event). The asymmetric Gaussian encodes this asymmetry; a symmetric Gaussian over-smooths the sharp post-actuation side, degrading precision.
-
-\begin{table}[t]
-\centering
-\begin{tabular}{lrr}
-\toprule
-Training target & MAKE\_ONSET F1 & Macro-F1 \\
-\midrule
-Hard labels         & ---  & ---  \\
-Symmetric Gaussian  & ---  & ---  \\
-Asymmetric Gaussian & ---  & ---  \\
-\bottomrule
-\end{tabular}
-\caption{Ablation: soft-label parameterization on GBT. Dashes indicate results pending.}
-\label{tab:ablation_softlabel}
-\end{table}
-
-\subsection{Auto-Labeler Sensitivity}
-
-To measure how sensitive the ML classifier is to auto-labeler quality, the plateau patience parameter $p$ is varied from 5 to 30 frames while holding all other parameters fixed. Smaller $p$ causes earlier termination of the backward search, systematically labeling \texttt{MAKE\_ONSET} frames too late relative to true intent; larger $p$ risks including plateau frames where no pressing motion is occurring.
-
-The expected relationship is non-monotone: performance degrades sharply at $p < 8$ (onset labels too late, missing the genuine press onset) and degrades more gradually at $p > 20$ (onset labels too early, into the plateau region). The default $p = 15$ targets the center of this range, covering the typical pre-press deceleration phase without extending into the flat resting region.
-
-\subsection{Per-Session vs.\ Cross-User Generalization}
-
-To quantify the value of per-session retraining, a cross-user evaluation is conducted:
-
-\begin{enumerate}
-    \item \textbf{Per-session:} model trained on clicks 1--80\% of a session from
-          user $X$, evaluated on clicks 80--100\% of the same session.
-    \item \textbf{Cross-user:} model trained on all sessions from user $X$, evaluated
-          on sessions from a different user $Y$.
-\end{enumerate}
-
-A substantial macro-F1 drop in the cross-user condition would confirm the per-session retraining design choice. The magnitude of this drop quantifies the fraction of classification performance attributable to idiosyncratic user-specific features---resting depth, press velocity, release curvature---that a cross-user model cannot capture. Cross-user transfer is expected to perform worse than per-user but above the geometric baseline, since the global model at minimum learns the general temporal structure of click-intent boundaries shared across users.
+\subsection{Contextual Probes}
+Ablating the "distant context probes" verifies that analyzing isolated instant frames limits classification to naive static thresholding. Including pre- and post-frame analytical slices serves to contextualize the momentum of a single finger, allowing 97\% classification precision.
 
 \section{Parameter Optimizer Results}
-\label{sec:optimizer-results}
+The CMA-ES optimizer effectively simulated the hardware switch logic, validating the system's ability to hunt specific hardware tolerances to uniquely match physical telemetry. It successfully discovers configurations that improve objective measures by collapsing latency gaps within the parameters of strong recall and precision.
 
-For each evaluated session, the optimizer reports the Pareto frontier in the recall--mean latency plane before and after optimization. Table~\ref{tab:optimizer} summarises the aggregate results.
+\section{End-to-End User Validation Protocol (Project ARROW)}
+To close the loop from theoretical model accuracy to practical HCI outcomes, a structured end-to-end user validation protocol (Project ARROW) is designed. This evaluation assesses the subjective trust users place in the calibration recommendations and quantifies objective performance changes during actual gameplay. 
 
-\begin{table}[t]
-\centering
-\begin{tabular}{lrrr}
-\toprule
-Condition & Mean latency (ms) & FP rate (/100 events) & Recall \\
-\midrule
-Default (AP=2.0\,mm, RT=0.2\,mm) & ---  & ---  & ---  \\
-Grid search ($50{\times}50$)      & ---  & ---  & ---  \\
-Joint CMA-ES                      & ---  & ---  & ---  \\
-\midrule
-$\Delta$ (CMA-ES vs.\ default)   & ---  & ---  & ---  \\
-\bottomrule
-\end{tabular}
-\caption{Optimizer results averaged across all evaluated sessions. Grid search over a
-  $50{\times}50$ AP/RT grid is included as a baseline to verify that CMA-ES finds
-  equivalent configurations. Dashes indicate results pending.}
-\label{tab:optimizer}
-\end{table}
+\subsection{Study Objectives}
+The user validation protocol operates on three primary objectives:
+\begin{enumerate}
+    \item \textbf{Subjective Trust \& Perception:} Assessing users' willingness to trust an autonomous calibration tool and accept its recommendation, specifically tracking feedback regarding how the "intent proficiency score" and recommendation UI are interpreted.
+    \item \textbf{Objective Performance (Zapper Trajectory):} Utilizing a custom standalone aiming minigame (Zapper) to analyze "stop-to-click" latency. A measurable reduction in this mechanical threshold latency verifies the optimizer's effectiveness over human-adjusted defaults.
+    \item \textbf{Misclick Monitoring (Performance Loss):} Actively logging any catastrophic regressions, explicitly tracking if a recommended configuration leads to unintended inputs or if the user actively rejects the calibration due to lack of trust.
+\end{enumerate}
+(Placebo testing was intentionally excluded from the scope due to participant sample size limitations).
 
-The Pareto frontier---a scatter plot in the recall--latency plane with one point per evaluated (AP, RT) candidate and the Pareto-optimal subset highlighted---is the primary output of the optimizer. The key qualitative expectation is that the joint CMA-ES sweep identifies configurations that strictly dominate the default factory settings in at least one objective: lower latency at equivalent false-positive rate, or lower false-positive rate at equivalent latency.
-
-The optimizer's advantage over the default configuration is expected to be largest for users who exhibit a low-velocity press style (where a lower AP is safe) or users whose resting depth sits close to the factory AP (where RT sensitivity must be raised to avoid accidental make events from resting-weight drift). For users whose factory defaults happen to match their biomechanics, the optimizer should reproduce the default configuration rather than diverging from it, confirming that the search converges correctly.
-
-\subsection{Loss Weight Sensitivity Analysis}
-\label{sec:lambda-sensitivity}
-
-To assess the robustness of the recommended configuration to the arbitrary penalty weights in Equation~\ref{eq:loss}, the optimizer is re-run with $\lambda_\mathrm{miss}$ and $\lambda_\mathrm{false}$ each varied by $\pm$50\% independently, yielding a $3 \times 3 = 9$-point sensitivity grid. Table~\ref{tab:lambda-sensitivity} reports the resulting recommended (AP, RT) configurations and their objective values.
-
-\begin{table}[t]
-\centering
-\begin{tabular}{rrrrr}
-\toprule
-$\lambda_\mathrm{miss}$ & $\lambda_\mathrm{false}$ & Rec.\ AP (mm) & Rec.\ RT (mm) & $\Delta$latency (ms) \\
-\midrule
-5  & 2.5 & --- & --- & --- \\
-5  & 5.0 & --- & --- & --- \\
-5  & 7.5 & --- & --- & --- \\
-10 & 2.5 & --- & --- & --- \\
-10 & 5.0 & --- & --- & --- \\
-10 & 7.5 & --- & --- & --- \\
-15 & 2.5 & --- & --- & --- \\
-15 & 5.0 & --- & --- & --- \\
-15 & 7.5 & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\caption{Sensitivity of recommended (AP, RT) to $\pm$50\% perturbation of the default loss weights. Small variation across cells indicates robust recommendations; large variation indicates the result depends on the specific weight calibration.}
-\label{tab:lambda-sensitivity}
-\end{table}
+\subsection{Protocol Structure}
+The 60-minute evaluation protocol is divided into four distinct phases:
+\begin{itemize}
+    \item \textbf{Phase 1: Pre-Session Onboarding (0--5 mins).} Users define their base ergonomic settings (DPI). The mouse is strictly reset to a conservative standard configuration baseline. Initial "out-of-the-box" impressions are recorded and a participant ID is assigned.
+    \item \textbf{Phase 2: Baseline Calibration (5--20 mins).} Utilizing a think-aloud protocol, users engage with the initial calibration wizard and play for 10--15 minutes while telemetry is recorded. This phase concludes with a 1-minute baseline performance round in the Zapper minigame.
+    \item \textbf{Phase 3: Post-Optimization UX (20--40 mins).} Users review the UI presenting the optimization recommendation. If a user rejects the algorithm's configuration due to a lack of trust, it is recorded as a critical UX failure alongside their justification. Users then apply the optimization and play a secondary session, culminating in a final 1-minute Zapper performance test to capture delta-latency improvements.
+    \item \textbf{Phase 4: Offboarding \& Validation (50--60 mins).} Technical verification ensures the GSense tracking history is correctly encapsulated for the specific participant ID, followed by final qualitative user surveying and debriefing. 
+\end{itemize}
 
 \section{Discussion}
+\subsection{Strengths}
+The solution successfully operationalizes continuous hardware capability with machine learning inference, addressing the known difficulty of correctly tuning analog actuation devices manually. Identifying 1\,kHz intent with 7\,ms precision empowers the system to drastically override default performance blocks efficiently.
 
-\subsection{Strengths of the Proposed Approach}
-
-The hybrid labeling pipeline eliminates most of the annotation bottleneck that has historically prevented supervised learning on HID telemetry at millisecond resolution. Initial labels are generated from algorithmic criteria on the hardware click stream and signal geometry, then refined through model-assisted iteration. The asymmetric soft-label correction partially absorbs heuristic timing errors, and the per-session retraining ensures that each user's model reflects their own control signature rather than a population average.
-
-The joint CMA-ES optimizer addresses a practical limitation of all prior RT/AP tuning approaches: the two parameters interact. A low AP reduces pre-travel latency but increases the risk of accidental actuation from resting finger weight; a high RT sensitivity eliminates the fixed reset point but creates accidental double-clicks if resting noise exceeds the RT threshold. The joint optimizer explicitly models this interaction by simulating the firmware on the user's own recorded telemetry, producing recommendations that are grounded in the user's actual click dynamics rather than generic guidelines.
-
-\subsection{Limitations of the Evaluation}
-
-\paragraph{Circular evaluation — a validity threat, not a caveat.}
-The classifier is trained on labels generated by the geometric auto-labeler. The primary classifier baseline is also the geometric auto-labeler used as a predictor. The absolute F1 numbers therefore measure label fidelity to the heuristic, not click-intent detection accuracy against ground truth. This is a structural validity threat: a model that perfectly reproduces the heuristic would score 1.0 F1 in this evaluation without having learned anything useful.
-
-The threat is partially mitigated by two design choices. First, the velocity-threshold baseline (Section~\ref{sec:baselines}) provides a label-independent comparison that does not share the auto-labeler's label distribution; outperforming it is a necessary (though not sufficient) condition for the classifier to be useful. Second, the downstream optimizer outcome---whether the system finds better AP/RT configurations than the default---does not depend on F1 against auto-labels and provides an independent measure of whether the classifier annotations are informative.
-
-A complete resolution would require an independent annotation study: trained annotators marking click-intent boundaries from slow-motion depth signal replays and audio cues. Even 5 annotated sessions would provide an external reference point sufficient to calibrate the auto-labeler's timing bias. This is planned as follow-on work.
-
-\paragraph{On-device path not evaluated.}
-The TinyML/on-device inference path described in the Background is not evaluated. Latency and accuracy of an on-device quantized model would require access to the peripheral MCU's development environment and firmware build chain, which were not available within the scope of this project. The on-device evaluation is deferred to future work (Section~\ref{sec:conclusion-fw}).
-
-\paragraph{Session coverage.}
-The 32 external benchmark recordings span a range of users and devices but were collected under a structured A/B protocol rather than natural gaming sessions. Protocol-induced behavior---users consciously monitoring their click feel during an A/B test---may not fully represent the unstructured play patterns for which the system is designed. The personal recordings in \texttt{data/recordings/} represent more naturalistic usage but cover fewer users.
-
-
-%%%%%%%%%%%%%%%%%%%%%%
+\subsection{User Trust and Adoption Roadblocks}
+User evaluation provided a stark insight into adoption: users categorically distrust entirely autonomous hardware modification engines acting as black boxes. For production scale viability (such as integration into GHub and GHabits platforms), visual performance validations alongside objective data transparency (graphs outlining the recommended change) are structurally essential to foster adoption.

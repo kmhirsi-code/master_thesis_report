@@ -1,164 +1,32 @@
 \chapter{Implementation}
-%%%%%%%%%%%%%%%%%%%%%%%%
-
-\section{System Stack and Process Topology}
-
-The system is realised as five cooperating processes spanning four programming languages, illustrated in Figure~\ref{fig:topology}. Each language is chosen for a concrete strength: TypeScript for cross-platform UI and typed-array signal processing; Python for the machine-learning ecosystem (scikit-learn, LightGBM, PyTorch); Rust for memory-safe data-parallel optimisation; and C++ for direct HID++ protocol access at sub-millisecond latency.
-
-\begin{figure*}[!t]
-  \centering
-  \begin{tikzpicture}[
-    font=\small,
-    proc/.style={draw, rounded corners=4pt, minimum width=3.2cm, minimum height=1.1cm,
-                 align=center, fill=white},
-    central/.style={draw, rounded corners=4pt, minimum width=4.0cm, minimum height=1.2cm,
-                    align=center, fill=gray!12},
-    arr/.style={{Stealth[length=4pt]}-{Stealth[length=4pt]}, thick},
-    node distance=1.6cm,
-  ]
-    % Central hub
-    \node[central] (electron)
-        {\textbf{Electron Main}\\{\scriptsize TypeScript / Node.js}};
-
-    % React renderer (top)
-    \node[proc, above=1.3cm of electron] (react)
-        {React Renderer\\{\scriptsize (sandboxed)}};
-
-    % C++ daemons (left)
-    \node[proc, left=2.0cm of electron] (devio)
-        {\textit{devio}\\{\scriptsize C++}};
-    \node[proc, above left=1.3cm and 1.5cm of electron] (nightfall)
-        {\textit{nightfalld}\\{\scriptsize C++}};
-
-    % Python service (bottom)
-    \node[proc, below=1.3cm of electron] (python)
-        {click-intent service\\{\scriptsize Python}};
-
-    % Rust optimizer (right)
-    \node[proc, right=2.0cm of electron] (rust)
-        {optimizer service\\{\scriptsize Rust ($\times$4 workers)}};
-
-    % Edges with protocol labels
-    \draw[arr] (react)    -- node[right=2pt, font=\scriptsize]       {contextBridge / IPC}       (electron);
-    \draw[arr] (nightfall)-- node[above right=1pt, font=\scriptsize] {named pipe (binary)}       (electron);
-    \draw[arr] (devio)    -- node[above=2pt, font=\scriptsize]       {named pipe (binary)}       (electron);
-    \draw[arr] (python)   -- node[right=2pt, font=\scriptsize]       {JSON-line stdin/stdout}    (electron);
-    \draw[arr] (rust)     -- node[above=2pt, font=\scriptsize]       {JSON-line stdin/stdout}    (electron);
-  \end{tikzpicture}
-  \caption{Five-process topology. Arrows denote bidirectional IPC. Rust optimizer uses four concurrent workers; Python service is a persistent daemon.}
-  \label{fig:topology}
-\end{figure*}
-
-\begin{itemize}
-    \item \textbf{Host application (TypeScript / Electron):} the main process owns the session store, orchestrates subprocess lifecycle via \texttt{ServerManager}, and exposes a typed IPC bridge to the React renderer. The full signal-processing pipeline runs here as a TypeScript module.
-    \item \textbf{Device I/O daemon (\texttt{nightfalld}, C++):} captures HID frames at up to 8,000\,Hz, performs real-time kinematic analysis (trajectory, jitter, click classification), and streams processed events to the host over a named pipe.
-    \item \textbf{Device control daemon (\texttt{devio}, C++):} negotiates HID++ feature pages (Analog Buttons 0x1B0C, Analog Keys 0x1B08, DPI 0x2201/0x2202) and writes configuration commands to the peripheral.
-    \item \textbf{Click-intent service (Python):} a persistent subprocess that trains and serves the click-intent ML models, receiving commands and emitting progress events over a JSON-line stdin/stdout channel.
-    \item \textbf{Optimizer service (Rust):} simulates the RT firmware state machine on recorded telemetry and sweeps the $(AP, RT)$ parameter space, communicating via the same JSON-line protocol.
-\end{itemize}
-
-\section{Signal Processing Pipeline}
-\label{sec:impl-signal}
-
-\subsection{Data Types and Precision Budget}
-
-All signal buffers use typed arrays. Intermediate computations—Akima spline fitting, Savitzky-Golay coefficient application, analytic second-derivative evaluation—operate on \texttt{Float64Array} (double precision) to prevent rounding-error accumulation across three successive differentiation steps. Results are downcast to \texttt{Float32Array} before storage and downstream consumption, halving memory bandwidth at the cost of approximately $10^{-7}$ relative error, which is negligible relative to the quantization error of the 7-bit step120 signal. Raw step120 integers are promoted to \texttt{Float64Array} at the pipeline entry point and never converted back until the final downcast.
-
-\subsection{Pipeline Entry Point}
-
-\texttt{computeDerivedSignals(step120, settings)} is the single public entry point for all derived channels. It returns a \texttt{DerivedChannel} record containing \texttt{Float32Array} buffers for depth, speed, acceleration, jerk, and drift, plus the interpolation factor in effect (needed by downstream code to convert sub-frame latency shifts). All intermediate allocations are local to this call; no global signal state is retained between invocations.
-
-\subsection{Depth Clamping After Interpolation}
-
-After Makima upsampling, depth is clamped to the physical range $[0, 120]$ step120 units before any smoothing or differentiation step. This is not a guard clause—it is a correctness requirement. Cubic-family interpolants overshoot on abrupt quantization steps: production recordings have shown overshoot to $-21$ step120 ($-0.7$\,mm below the resting surface) and Runge-phenomenon spikes to $+143$ step120 ($+0.77$\,mm past the bottom stop). The Rust optimizer's state machine compares normalised depth against threshold parameters in $[0.0, 1.0]$; unclamped values outside $[0, 120]$ produce make or break events at frames where no actuation occurred, corrupting the entire sweep result silently.
-
-\subsection{Contact-Bounce Blind Window}
-
-When contact-bounce suppression is enabled, the $W_b$-frame masked region is filled by evaluating a natural cubic spline fitted to $W_c$ context frames bracketing the gap. The spline second-derivative vector is computed via the Thomas algorithm—a specialised $O(W_c)$ tridiagonal solver that exploits the strict diagonal dominance of the natural-boundary condition system, avoiding the $O(W_c^2)$ cost of general Gaussian elimination. Each masked frame is then evaluated by the piecewise Hermite formula from its two bracketing knots and their precomputed second derivatives, recovering a smooth trajectory through the bounce window.
-
-\subsection{Peak Mipmap}
-
-Waveform visualisation during session review requires fast range-max queries: the Y-axis scale must be recomputed on every scroll and zoom event. A \texttt{PeakMipmap} is built once per signal in $O(N)$ time as a power-of-two cascade of \texttt{Float32Array} levels, each storing the maximum absolute value over non-overlapping pairs from the level below. A range-max query for $[l, r]$ selects the coarsest level whose cell width is $\leq 64$ samples and traverses the covered cells—a constant number of memory accesses for any fixed display resolution. Without this structure, each scroll event over a 300,000-sample session would require a full $O(N)$ linear scan.
-
-\section{Inter-Process Communication}
-
-\subsection{Named Pipes for C++ Daemons}
-
-\texttt{nightfalld} and \texttt{devio} communicate via platform-native named pipes on Windows and Unix domain sockets on Linux. Pipe names are unique per-process instance: \texttt{gsense\_nightfalld\_\{pid\}\_\{timestamp\}} and \texttt{gsense\_devio\_\{pid\}\_\{timestamp\}}. Uniqueness prevents collision when multiple application windows run simultaneously, and the absence of a well-known port avoids firewall conflicts on restricted networks.
-
-\texttt{devio} is spawned first and given a one-second head-start; \texttt{nightfalld} then receives the devio pipe name as a startup argument. This enforces a unidirectional dependency without a shared global registry: \texttt{nightfalld} can query device capabilities from \texttt{devio} at any point after startup without requiring a service-discovery step.
-
-\subsection{JSON-Line Protocol for Python and Rust}
-
-The click-intent service and optimizer service both use newline-delimited JSON over stdin/stdout. This protocol requires no port allocation, works identically on all platforms, and is natively line-buffered by the OS. Streaming events (training-progress updates, optimizer progress ticks) are emitted as individual lines, so the host receives them incrementally without waiting for the full job to complete. Each command carries a \texttt{job\_id} field; all responses echo the same \texttt{job\_id}, enabling the host to demultiplex concurrent jobs running in separate threads within a single daemon process.
-
-\subsection{ServerManager Orchestration}
-
-\texttt{ServerManager} in the Electron main process owns the lifecycle of all five subprocesses:
-
-\begin{itemize}
-    \item \textbf{Heartbeat monitoring.} \texttt{nightfalld} is polled every 10\,s with a 3\,s timeout. Three consecutive failures emit a \texttt{backend-unresponsive} event to the UI and trigger a restart sequence.
-    \item \textbf{Auto-restart.} An unexpected exit (code $\neq 0$, signal $\notin \{\text{SIGTERM, SIGKILL}\}$) triggers automatic restart, up to three attempts. Deliberate shutdowns skip this logic.
-    \item \textbf{Graceful shutdown.} SIGTERM is issued first; if the process has not exited within 3\,s, SIGKILL follows.
-    \item \textbf{Device config restoration.} On USB reconnect or system resume, per-device configurations (DPI, actuation thresholds) are restored. Stored values are percentage-normalised; on reconnect, \texttt{devio} reports the device's current capability range and the manager converts percentages to absolute step values before re-issuing configuration commands.
-\end{itemize}
-
-\subsection{Renderer Security Boundary}
-
-The React renderer runs in a sandboxed Electron context and communicates with the main process exclusively through a typed \texttt{contextBridge} preload API. The renderer cannot spawn processes, open named pipes, or access the filesystem directly. This boundary ensures that a malformed session file parsed in the renderer cannot escalate to arbitrary process execution on the host.
-
-\section{RT State Machine Simulation}
-
-The Rust optimizer service is centred on \texttt{state\_machine.rs}, which implements a frame-by-frame simulation of the peripheral firmware's Rapid Trigger FSM. The simulation is the single source of truth for the firmware's behaviour on a given depth trace: the RT state machine is non-differentiable and history-dependent, so there is no closed-form expression for its output as a function of $(AP, RT)$ parameters. The only correct approach is to simulate it frame-by-frame on the actual recorded data.
-
-\paragraph{Non-RT mode (2-state FSM).}
-\begin{itemize}
-    \item \textbf{IDLE:} $\mathrm{signal}[t] \geq \theta_\mathrm{make}$ $\Rightarrow$ emit make event, transition to \textbf{PRESSED}.
-    \item \textbf{PRESSED:} $\mathrm{signal}[t] \leq \theta_\mathrm{break}$ $\Rightarrow$ emit break event, transition to \textbf{IDLE}.
-\end{itemize}
-
-\paragraph{RT mode (3-state hysteresis FSM).}
-\begin{itemize}
-    \item \textbf{IDLE:} $\mathrm{signal}[t] \geq \theta_\mathrm{make}$ $\Rightarrow$ emit make event, set $\mathrm{peak} \leftarrow \mathrm{signal}[t]$, transition to \textbf{PRESSED}.
-    \item \textbf{PRESSED:} update $\mathrm{peak} \leftarrow \max(\mathrm{peak},\, \mathrm{signal}[t])$. If $\mathrm{signal}[t] \leq \mathrm{peak} - \Delta_\mathrm{RT}$ $\Rightarrow$ emit break event, set $\mathrm{valley} \leftarrow \mathrm{signal}[t]$, transition to \textbf{RT\_RELEASED}.
-    \item \textbf{RT\_RELEASED:} update $\mathrm{valley} \leftarrow \min(\mathrm{valley},\, \mathrm{signal}[t])$. If $\mathrm{signal}[t] \leq 0$ $\Rightarrow$ reset to \textbf{IDLE}. If $\mathrm{signal}[t] \geq \mathrm{valley} + \Delta_\mathrm{RT}$ $\Rightarrow$ emit make event, transition to \textbf{PRESSED}.
-\end{itemize}
-
-\paragraph{Parallel sweep.}
-Four input signals (depth, speed, acceleration, jerk) are crossed with two threshold types (make and break thresholds independently), yielding 16 distinct (signal, threshold) combinations. Each combination is evaluated independently using Rayon's work-stealing thread pool, which allocates $n_\mathrm{CPUs} - 2$ threads to leave cores available for the Electron main process and C++ daemons. The full evaluated grid and Pareto frontier are serialised to a per-run JSON sidecar alongside the in-memory result, enabling post-hoc inspection of the complete loss landscape without re-running the sweep.
-
-\section{ML Service: Training Pipeline and Model Lifecycle}
-
-\subsection{Daemon Architecture}
-
-The click-intent service runs as a persistent Python subprocess. The main thread blocks on \texttt{stdin.readline()}, dispatching each command to a new worker thread. A per-job \texttt{threading.Event} cancel flag is checked at epoch boundaries, enabling clean mid-epoch termination without corrupting in-progress checkpoints. All \texttt{stdout} writes are serialised by a global \texttt{threading.Lock}, preventing line interleaving from concurrent progress events across simultaneous jobs.
-
-\subsection{Model Persistence and Reproducibility}
-
-Each trained model occupies its own directory containing:
-\begin{itemize}
-    \item \texttt{config.json} — architecture hyperparameters and training configuration
-    \item \texttt{weights.pkl} / \texttt{.pt} — serialised weights (joblib for scikit-learn models, \texttt{torch.save} for the FCN)
-    \item \texttt{metrics.json} — per-class validation F1, confusion matrix, and inference benchmark
-    \item \texttt{info.json} — provenance metadata including an SHA-256 input fingerprint
-    \item \texttt{resume.json} + \texttt{checkpoints/} — present only during a paused training run
-\end{itemize}
-
-The model ID follows the convention \texttt{\{arch\}\_\{channel\}\_\{param\_hash\}\_\{timestamp\}}, where \texttt{param\_hash} is an 8-character prefix of the SHA-256 digest of the full training configuration. Two identical configurations on the same data produce the same hash, enabling cache hits and reproducible ablation comparisons without manual bookkeeping. After training, the model is profiled on 2,000 frames across three warm-up trials; the minimum observed latency is recorded as \texttt{ms\_per\_frame} in \texttt{metrics.json}, providing an immediate deployment-readiness indicator.
-
-\subsection{Data Augmentation}
-
-Two augmentation strategies are applied at training time only, never to the held-out validation or test partitions.
-
-\textbf{Channel flip.} Left (L) and right (R) analog channels are swapped, treating the left-button recording as a right-button recording and vice versa. All preprocessing parameters that refer to a specific side (actuation thresholds, hysteresis values) are mirrored correspondingly. This doubles the effective training set at zero annotation cost, exploiting the bilateral symmetry of the click task.
-
-\textbf{Noise and smoothing perturbation.} Gaussian noise (with $\sigma$ sampled per augmented copy) is injected into the normalised depth signal after preprocessing, and the smoothing window is perturbed within a small neighbourhood of its nominal value. Smoothing perturbation is memoized via an LRU cache keyed on window size, amortising the cost of Akima re-computation when the same window appears across multiple augmented copies of the same session.
-
-\subsection{Batch Inference and Overlap Handling}
-
-Full-session prediction is split into 30,000-frame chunks. The fixed dispatch overhead of scikit-learn's \texttt{predict\_proba} (${\approx}14$\,ms per call, independent of chunk size) makes very small chunks wasteful; 30,000 frames keeps the overhead below 0.05\,\% of total inference time while fitting within cache. Adjacent chunks overlap by the classifier's temporal receptive field—32\,frames for RF and GBT, 3,060 frames for the OfflineFCN. After all chunks are predicted, the left half of each overlapping region is taken from the left chunk and the right half from the right chunk, eliminating boundary artefacts without requiring additional smoothing of the probability output.
-
-Optuna hyperparameter-sweep studies are persisted to a per-session SQLite file. On application restart, incomplete sweeps resume from the last completed trial without re-evaluating previously explored configurations.
-
-
+\label{chap:implementation}
 %%%%%%%%%%%%%%%%%%%%
+
+This chapter describes the software and hardware implementation of the system designed in Chapter~\ref{chap:design}.
+
+\section{Frontend and Telemetry Stack}
+The user-facing layer is built within GSense, providing the orchestration dashboard, recording states, and test minigames. Telemetry ingestion is managed primarily by GXT-Devio via HIDPP and seamlessly synchronized by the Nightfall background service. This layered composition ensures that 1\,kHz hardware polling runs safely out-of-process, leaving the GSense frontend free to organize workflows without stalling the main analytical execution arrays.
+
+\section{Machine Learning Backend}
+The machine learning pipeline is encapsulated in a dedicated Python intent-detection backend. During preprocessing, SciPy-based MAKIMA interpolation and statistical variance filtering are executed to sanitize and score the 1\,kHz stream entropy. The Random Forest classifier relies heavily on scikit-learn logic, converting the sliding windows of distance/velocity probes into flattened tabular feature arrays. Experimental sequence-level architectures, specifically the FDCN approaches, are developed using PyTorch.
+
+\section{Optimization Pipeline Integration}
+The optimization phase bridges the machine learning framework back into direct hardware behavior suggestions. The CMA-ES simulation implements custom finite state machine logic algorithmically mirroring the precise internal trigger mechanisms for the PRO X2 Superstrike. The frontend integration directly extracts the optimizer's outputs to satisfy critical user-sentiment constraints observed during testing: displaying the resultant AP and RT adjustments not as a simple black-box recommendation, but as graph-supported "educated guesses" illustrating the explicit Recall/Precision tradeoff improvements.
+
+\section{Data Acquisition Campaign}
+\label{sec:data_acquisition}
+
+The development and training of the machine learning backend required the construction of a robust ground-truth dataset spanning diverse ergonomic and biomechanical profiles. Data was collected from 69 participants via active field deployments at two major public gaming events (BIC and PolyLAN).
+
+\subsection{Controlled Task Dataset (BIC Event)}
+The first deployment cohort ($N=26$) comprised a mix of highly ranked competitive gamers and casual novices playing \textit{Counter-Strike 2} (CS2). The protocol ran for approximately 60 minutes per user and was strictly structured to isolate specific click dynamics:
+\begin{itemize}
+    \item \textbf{Configuration A/B Testing:} Following a uniform warmup phase, users played two 15-minute game blocks. The device hardware profile was hot-swapped halfway through the session, alternating between an aggressive configuration (AP at 1, RT at 1) and a highly conservative configuration (AP at 5, zero Rapid Trigger). The presentation order was randomized to mitigate sequence bias.
+    \item \textbf{Weapon Rotations:} Within each 15-minute block, users were instructed to rotate their active weapon every five minutes. The arsenal was specifically chosen to evoke distinct motor patterns: the \textit{USPS} pistol for rapid individual tapping fatigue, the \textit{M4A1} rifle for sustained tracking and spraying, and the \textit{AWP} sniper rifle for slow, deliberate holding and release. 
+\end{itemize}
+Qualitative user feedback regarding the switch feel was collected asynchronously after the sessions via standardized surveying.
+
+\subsection{Free-Play Dataset (PolyLAN Event)}
+The secondary dataset ($N=43$) focused on unstructured free-play in a high-density LAN environment. Participants engaged in approximately 40-minute play sessions utilizing their preferred competitive title (\textit{League of Legends}, \textit{CS2}, or \textit{Valorant}). Similar to the controlled dataset, the hardware configurations were silently swapped from conservative to aggressive baseline profiles near the 20-minute mark to capture a wider net of organic responses.
+
+The aggregated dataset generated from these two campaigns ultimately produced hundreds of hours of raw 1\,kHz telemetry, demanding the variance entropy scoring (detailed in Section~\ref{chap:design}) to isolate periods of genuine engagement before entering the classification pipelines.
