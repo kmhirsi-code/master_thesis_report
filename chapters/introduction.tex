@@ -1,0 +1,41 @@
+\chapter{Introduction}
+%%%%%%%%%%%%%%%%%%%%%%
+
+Human-Computer Interaction (HCI) in high-performance computing and competitive esports places stringent demands on input peripherals. In environments where users execute several hundred Actions Per Minute (APM), actuation latency and threshold stability can affect both task performance and musculoskeletal load~\cite{esports_tendinopathy, wrist_fatigue_genre_2025}.
+
+\section{The Evolution of Continuous Sensing Hardware}
+Peripheral hardware has shifted from binary mechanical switches toward continuous sensing interfaces. In HCI, threshold selection and activation logic have long been recognized as key determinants of usability and speed \cite{touchpad_comparison, impact2018}. Recent Hall-effect and inductive devices expose depth-dependent actuation and reset behavior to firmware, including Rapid Trigger mechanisms for dynamic re-actuation \cite{wooting_rapid_trigger, pcgamer_hall_effect, drone_rapid_trigger}. Commercial systems such as HITS further combine inductive sensing with configurable haptic feedback \cite{logitech_superstrike_2026, logitech_hits_patent, fox_superstrike_2026, techradar_superstrike_2026}. Collectively, these developments increase control resolution but also increase dependence on well-calibrated software thresholds \cite{dynamic_keyboard, magnetic_tuning, attackshark_taphold}.
+
+\section{The Limitations of Static Actuation Thresholds}
+Despite these hardware leaps, the software interpreting this data remains limited. Current analog peripherals rely on static firmware thresholds that are agnostic to human biomechanical variance. Players exhibit unique control signatures, including micro-hesitations and varying velocity curves, which often clash with rigid hardware logic~\cite{impact2018}. When static thresholds are set too aggressively, they fail to filter out physiological noise; when set too conservatively, they introduce unnecessary mechanical pre-travel. This friction results in sub-optimal latency or a high frequency of unintended actuations during high-stress scenarios~\cite{touchpad_comparison, dynamic_keyboard}.
+
+\section{Neuromotor Fatigue and Performance Decay}
+These hardware trends also intersect with user health. Higher APM in esports has been associated with repetitive strain injuries and tendinopathies \cite{esports_tendinopathy, difrancisco2019managing, 1hp_esports_ergonomics}. Biomechanical studies report distinct fatigue patterns for keyboard and mouse interaction \cite{fatigue_flexor}, and repetitive clicking can degrade aiming accuracy while increasing forearm muscle load \cite{clicking_fatigue_ergonomics_2024}. High-APM genres are linked to elevated kinematic demand on wrist extensors \cite{wrist_fatigue_genre_2025}, with measurable neuromotor adaptation during fatiguing tasks \cite{heimhofer2024finger}. These findings motivate adaptive calibration that maintains responsiveness while reducing unintended actuation under fatigue.
+
+
+\section{Toward Adaptive Intent Detection}
+One longer-term direction is intent inference before full mechanical actuation. Prior work on surface electromyography (sEMG) and embedded TinyML suggests this is technically plausible~\cite{reactemg, lda_emg, tinyml_mcu_inference, singh2023edge}. However, this thesis focuses on a narrower and directly evaluable scope: offline calibration from depth telemetry already produced by the peripheral. On-device inference is treated as future work (Section~\ref{sec:conclusion-fw}). Productization and UX integration (including the UX Exploration v2 flow and eventual GHub/GHabits integration) are likewise positioned as future work.
+
+\section{Thesis and Contributions}
+The central hypothesis of this thesis is that per-user variation in click telemetry is structured enough to support automatic labeling, statistical modeling, and parameter optimization beyond static default settings. The contributions are:
+\begin{itemize}
+        \item A hybrid labeling pipeline for analog HID click intent that derives
+            initial frame-level \texttt{MAKE\_ONSET}, \texttt{CLICK\_HOLD}, and \texttt{BREAK\_ONSET}
+            annotations from algorithmic criteria (geometry, speed, and acceleration)
+            and then improves boundary quality through model-assisted iteration.
+    \item A four-class temporal sequence classifier with two model paths: a shallow
+          path (Random Forest, Gradient Boosted Trees) operating on hand-crafted
+          sliding-window features for sub-second per-session training, and a deep path
+          (dilated residual FCN, DETR-style decoder) operating on raw telemetry with a
+          $\pm$1530\,ms learned receptive field.
+    \item A joint CMA-ES optimizer that simulates the peripheral firmware's Rapid
+          Trigger state machine and finds Pareto-optimal (AP, RT) configurations,
+          replacing manual threshold tuning with a data-driven trade-off curve.
+\end{itemize}
+
+While not a primary algorithmic contribution, the work also includes a small HCI-facing
+component: minigames that replicate the most popular games that provide an environment for user to quickly get a recommendation.
+The recommendation outputs are structured for interpretability (trade-off views and
+comparative candidate points), so users can inspect why a suggested AP/RT point is proposed.
+
+%%%%%%%%%%%%%%%%%%%%%%

@@ -1,0 +1,100 @@
+\chapter{Conclusion}
+%%%%%%%%%%%%%%%%%%%%
+
+\section{Summary}
+
+This thesis presented an offline adaptive calibration pipeline for analog peripherals with continuous depth sensing. The work addresses a practical limitation of current firmware: static actuation thresholds that do not adapt to per-user biomechanics, device variability, or within-session fatigue.
+
+The main contributions are:
+
+\begin{itemize}
+                \item A \textbf{hybrid labeling pipeline} that derives initial frame-level
+                    \texttt{MAKE\_ONSET}, \texttt{CLICK\_HOLD}, and \texttt{BREAK\_ONSET}
+                        annotations from algorithmic criteria (depth geometry, speed, and acceleration)
+                        and then refines boundary quality through model-assisted iteration. A geometric
+                        weak-supervision heuristic is combined with asymmetric soft labels to model
+                        directional timing uncertainty at boundaries.
+
+        \item A \textbf{four-class temporal sequence classifier} with two model paths. The
+          shallow path (Random Forest, Gradient Boosted Trees) operates on hand-crafted
+            sliding-window features and supports rapid per-session retraining. The deep path
+                                    (dilated residual FCN with DETR-style decoding) operates on raw four-channel telemetry
+            with a learned $\pm$1530\,ms receptive field, trading higher context for higher
+            compute cost.
+
+    \item A \textbf{joint CMA-ES optimizer} that simulates the peripheral firmware's
+          Rapid Trigger state machine frame-by-frame and finds Pareto-optimal (AP, RT)
+          configurations under latency and false-positive objectives, replacing manual
+          threshold sweeps with a data-driven trade-off analysis.
+\end{itemize}
+
+In aggregate, these components provide an end-to-end workflow in which a user recording can be automatically labeled, modeled, and optimized to produce evidence-based AP/RT recommendations with minimal manual intervention.
+
+\section{Limitations}
+\label{sec:limitations}
+
+Several limitations constrain the generality of the current system:
+
+\begin{itemize}
+    \item \textbf{Small evaluation cohort.} The system was evaluated on a limited number
+          of users and sessions. Cross-user generalization---whether a model trained on
+          one user's data transfers meaningfully to another---was not demonstrated at
+          scale. The per-session training approach mitigates this by avoiding cross-user
+          transfer entirely, but the cold-start problem for first-time users with no
+          prior recordings is not addressed.
+
+    \item \textbf{Auto-labeler timing errors.} The geometric labeling heuristic
+          introduces systematic timing bias of up to $W_b$ frames. While asymmetric soft
+          labels partially absorb this uncertainty, they do not eliminate it. Make-onset
+          F1 is sensitive to the plateau patience parameter, confirming that labeler
+          quality is a first-order determinant of classification performance.
+
+    \item \textbf{Offline-only inference.} The OfflineFCN's symmetric non-causal
+          padding is incompatible with streaming inference on the peripheral MCU. Any
+          deployment on the on-device path would require a causal (left-padded)
+          architectural variant, which reduces the per-layer receptive field contribution
+          by half.
+
+    \item \textbf{Drift channel unused in the optimizer.} The drift channel
+          ($\mathrm{EMA}_{20} - \mathrm{EMA}_{200}$) is computed and exposed in the
+          session review UI but is not integrated into the optimizer's objective function.
+          As a result, the system does not currently adapt AP/RT recommendations in
+          response to detected fatigue-induced resting-weight shift.
+\end{itemize}
+
+\section{Future Work}
+\label{sec:conclusion-fw}
+
+\begin{enumerate}
+    \item \textbf{On-device deployment.} Quantize the OfflineFCN to INT8 and evaluate
+          inference latency on the peripheral RISC-V MCU. Develop a causal (left-padded)
+          variant compatible with streaming inference. A causal model would convert the
+          offline classifier into a real-time intent detector, enabling the pre-report
+          filtering described in the Background.
+
+    \item \textbf{Multi-session accumulation.} Train on pooled data from a user's full
+          recording history rather than re-training from scratch each session. A
+          multi-session model accumulates evidence about the user's long-term
+          biomechanical signature, reducing label noise from individual sessions and
+          improving performance on edge cases (fatigue-modulated dynamics, device
+          warm-up transients).
+
+    \item \textbf{Drift-aware re-calibration.} Integrate the drift channel into the
+          optimizer's objective: trigger an automatic re-calibration recommendation when
+          sustained positive drift exceeds a per-user threshold, indicating flexor-fatigue
+          onset. This closes the loop between the fatigue diagnostic described in
+          Section~\ref{sec:drift} and the AP/RT adaptation.
+
+    \item \textbf{Cross-user pre-training.} Pre-train the FCN on pooled data from
+          multiple users and fine-tune per-session, reducing the cold-start problem for
+          new users with short recording histories. A pre-trained backbone should require
+          fewer labeled frames to reach stable performance than a randomly initialized
+          model.
+
+        \item \textbf{Product and UX integration.} Integrate the recommendation workflow
+            into the UX Exploration v2 flow so users can inspect why a suggested AP/RT
+            point is selected (trade-off plots, confidence signals, and comparable
+            alternatives), then harden the same interface and telemetry contracts for
+            downstream integration into GHub/GHabits.
+\end{enumerate}
+

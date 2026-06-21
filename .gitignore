@@ -7,4 +7,5 @@
 /*.log
 /*.out
 /*.pdf
+!/thesis.pdf
 /*.rubbercache

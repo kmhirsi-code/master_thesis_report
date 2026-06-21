@@ -1,0 +1,365 @@
+\chapter{Design}
+\label{chap:design}
+%%%%%%%%%%%%%%%%
+
+The key design contributions of this work are: (1) a Makima superresolution velocity estimator that recovers sub-step motion information from the quantized step120 depth signal, enabling accurate onset timing on 1\,kHz telemetry; (2) a four-class probabilistic intent formulation that decouples make and break detection thresholds, giving independent control over sensitivity at each click boundary; and (3) a joint CMA-ES sweep over the two-dimensional AP/RT parameter space that replaces manual threshold selection with a data-driven Pareto frontier. Prior adaptive-threshold systems for analog HID devices~\cite{impact2018, dynamic_keyboard} apply fixed heuristics independently to each parameter; the joint optimizer here treats the two-dimensional search as a single covariance-adapted problem, exploiting the structural correlation between actuation depth and release sensitivity.
+
+To realize these contributions, the system must solve three tightly coupled problems: faithfully reconstructing the underlying intent signal from noisy, high-rate sensor data; identifying where in that signal a deliberate click begins and ends; and finding AP/RT settings that minimize latency while suppressing false events. This chapter describes the problem-specific reasoning behind each architectural choice; the mathematical properties of the underlying methods are summarised in Section~\ref{sec:bg-methods}.
+
+\section{Design Goals and Constraints}
+
+The system operates in two distinct modes. The \emph{offline analysis} mode is the primary mode of operation: after a gaming session, recorded telemetry is post-processed to detect click boundaries, simulate the RT state machine across a grid of (AP, RT) candidates, and recommend optimal settings. This path has no hard latency constraint beyond user-perceived session-review time (seconds to low tens of seconds). The \emph{on-device inference} mode is the secondary path: a quantized TinyML model resident on the peripheral MCU classifies each telemetry frame as an intended click or physiological noise before the HID report is issued. This path does interpose in the signal chain and must complete within a single polling interval—125\,$\mu$s at 8,000\,Hz, or 1\,ms at the dominant 1,000\,Hz polling rate of modern gaming mice.
+
+\emph{Note: the on-device inference path described here is a design target. The current implementation covers the offline analysis path in full; on-device deployment of a quantized causal model is left as future work (Section~\ref{sec:conclusion-fw}).}
+
+The distinction matters for filter design. Offline components may be zero-phase (non-causal), applying symmetric convolutions over the full recorded session to preserve onset timing without phase lag. On-device components must be causal—each output depends only on current and past samples. The design makes this split explicit: zero-phase Savitzky-Golay smoothing is used for post-hoc analytics and RT simulation, while causal exponential moving averages handle live drift estimation.
+
+A further constraint is personalization. Because no two users share identical biomechanical signatures~\cite{impact2018}, the system avoids globally-fixed thresholds. Every adaptive parameter is fitted per-recording to the individual user's own telemetry.
+
+\section{System Architecture}
+
+The pipeline is structured in four layers, shown in Figure~\ref{fig:arch}. Raw step-depth telemetry is acquired from the peripheral firmware and persisted to a local session store. The \emph{signal processing} layer derives smoothed depth, velocity, acceleration, jerk, and drift channels from the raw data. The \emph{intent detection} layer identifies click boundaries using either a fast geometric onset detector or a trained probabilistic classifier. The \emph{optimization} layer searches the two-dimensional (AP, RT) parameter space using a derivative-free evolutionary optimizer and exposes a Pareto-optimal trade-off curve to the user.
+
+Native C++ daemons handle device I/O, raw frame capture, binary frame decoding, and on-device model execution, communicating with the host application via named pipes. Python services for classifier training, Bayesian hyperparameter search, and parameter optimization run as persistent subprocess workers communicating over an IPC channel. A pool of concurrent optimizer workers enables parallel candidate evaluation; throughput scales linearly with pool size.
+
+\begin{figure*}[!t]
+  \centering
+  \begin{tikzpicture}[
+    font=\small,
+    box/.style={draw, rounded corners=4pt, text width=8.2cm,
+                minimum height=0.95cm, align=center, fill=white},
+    hwbox/.style={draw, rounded corners=4pt, text width=8.2cm,
+                  minimum height=0.95cm, align=center, fill=gray!15},
+    futurebox/.style={draw=gray!60, dashed, rounded corners=4pt, text width=2.4cm,
+                      minimum height=4.2cm, align=center, fill=gray!5, text=gray},
+    arr/.style={-{Stealth[length=5pt]}, thick},
+    darr/.style={-{Stealth[length=5pt]}, thick, dashed, gray!60},
+    node distance=0.55cm,
+  ]
+    \node[hwbox] (hw)   {\textbf{Peripheral Firmware}\\Hall-effect / HITS sensor, 1\,kHz depth telemetry};
+    \node[box,   below=of hw]   (acq)   {\textbf{Data Acquisition}\\
+                                          \textit{nightfalld} (C++) \enspace$\vert$\enspace \textit{devio} (C++)\enspace$\vert$\enspace Session Store};
+    \node[box,   below=of acq]  (proc)  {\textbf{Signal Processing} (TypeScript)\\
+                                          depth $\cdot$ speed $\cdot$ acceleration $\cdot$ jerk $\cdot$ drift};
+    \node[box,   below=of proc] (det)   {\textbf{Intent Detection \& Optimisation}\\
+                                          geometric labeler $\to$ ML classifier (Python)\enspace$\vert$\enspace CMA-ES sweep (Rust)};
+    \node[hwbox, below=of det]  (ui)    {\textbf{User Interface}\\React renderer (Electron contextBridge)};
+
+    \draw[arr] (hw)   -- node[right=3pt, font=\scriptsize] {HID frames} (acq);
+    \draw[arr] (acq)  -- (proc);
+    \draw[arr] (proc) -- (det);
+    \draw[arr] (det)  -- node[right=3pt, font=\scriptsize] {AP/RT recommendation} (ui);
+
+    % On-device future path (dashed, right column)
+    \node[futurebox, right=1.1cm of proc] (ondev)
+        {on-device\\MCU\\inference\\{\scriptsize (future\\work)}};
+    \draw[darr] (hw.east)  -- ++(1.1,0) |- (ondev.north);
+    \draw[darr] (ondev.south) -- ++(0,-0.3);
+
+    % Layer label braces
+    \node[font=\scriptsize\itshape, left=0.15cm of hw]   {Hardware};
+    \node[font=\scriptsize\itshape, left=0.15cm of acq]  {Acquisition};
+    \node[font=\scriptsize\itshape, left=0.15cm of proc] {Processing};
+    \node[font=\scriptsize\itshape, left=0.15cm of det]  {Analysis};
+    \node[font=\scriptsize\itshape, left=0.15cm of ui]   {Interface};
+  \end{tikzpicture}
+  \caption{Four-layer system architecture. The offline analysis path (solid) post-processes recorded sessions; the on-device inference path (dashed) is a future deployment target for a quantized causal model on the peripheral MCU.}
+  \label{fig:arch}
+\end{figure*}
+
+\begin{figure*}[!t]
+  \centering
+  \begin{tikzpicture}[
+    font=\small,
+    scale=0.85,
+    sig/.style={draw, rounded corners=2pt, minimum width=1.6cm, minimum height=0.5cm,
+                align=center, fill=white, font=\scriptsize},
+    op/.style={draw=gray!70, rounded corners=2pt, minimum width=2.3cm, minimum height=0.5cm,
+               align=center, font=\tiny, fill=gray!10},
+    arr/.style={-{Stealth[length=3pt]}, thick},
+    node distance=0.3cm and 0.6cm,
+  ]
+    % Raw input
+    \node[sig, fill=gray!15] (raw) {raw step120};
+
+    % Depth (center lane)
+    \node[op,  right=0.8cm of raw]                  (clampop) {clamp $[0,120]$\\+ SG smooth};
+    \node[sig, right=0.6cm of clampop]              (depth)   {depth};
+
+    % Speed (top lane)
+    \node[op,  above right=0.7cm and 0.8cm of depth] (spop)  {Makima $2\!\times$ upsample\\+ centred diff};
+    \node[sig, right=0.6cm of spop]                  (speed)  {speed};
+
+    % Accel (middle lane, right of depth)
+    \node[op,  right=0.8cm of depth]                 (accop)  {Akima $d''$\\(analytic)};
+    \node[sig, right=0.6cm of accop]                 (accel)  {acceleration};
+
+    % Jerk (right of accel)
+    \node[op,  right=0.7cm of accel]                 (jerkop) {centred diff\\+ SG smooth};
+    \node[sig, right=0.6cm of jerkop]                (jerk)   {jerk};
+
+    % Drift (bottom lane)
+    \node[op,  below right=0.7cm and 0.8cm of depth] (driftop){$\hat{d}\!=\!d/120$\\$\mathrm{EMA}_{20}\!-\!\mathrm{EMA}_{200}$};
+    \node[sig, right=0.6cm of driftop]               (drift)  {drift};
+
+    % Arrows
+    \draw[arr] (raw)   -- (clampop);
+    \draw[arr] (clampop) -- (depth);
+    \draw[arr] (depth.north) |- (spop.west);
+    \draw[arr] (spop)  -- (speed);
+    \draw[arr] (depth) -- (accop);
+    \draw[arr] (accop) -- (accel);
+    \draw[arr] (accel) -- (jerkop);
+    \draw[arr] (jerkop) -- (jerk);
+    \draw[arr] (depth.south) |- (driftop.west);
+    \draw[arr] (driftop) -- (drift);
+
+    % Causal annotation
+    \node[font=\scriptsize\itshape, below=0.15cm of driftop, text=gray]
+        {(causal EMA — on-device compatible)};
+  \end{tikzpicture}
+  \caption{Signal processing pipeline. Speed uses Makima upsampling; acceleration is the analytic second derivative; drift uses causal EMAs (on-device compatible).}
+  \label{fig:pipeline}
+\end{figure*}
+
+\section{Telemetry Representation}
+
+\subsection{Sensor Encoding}
+
+The firmware decoder produces sensor readings as integers in the range $[0, 120]$, denoted \emph{step120} units. Step120 = 0 corresponds to the fully released position; step120 = 120 corresponds to full travel (4.0\,mm depression). Full physical travel maps linearly to this range, so one step120 unit corresponds to $\tfrac{4.0\,\text{mm}}{120} \approx 0.033\,\text{mm}$. Samples arrive at 1,000\,Hz, so one frame equals one millisecond of wall-clock time; all time-domain quantities—speed, latency, smoothing window widths—are expressed in frames throughout. Both the left (L) and right (R) buttons are captured in parallel, yielding a four-channel input tensor:
+$\{\texttt{analog\_L},\;\texttt{analog\_R},\;\texttt{digital\_L},\;\texttt{digital\_R}\}$.
+Analog channels are normalized to $[0,1]$ before entering the machine-learning pipeline.
+
+\subsection{Contact-Bounce Suppression}
+
+Contact-bounce transients are sub-millisecond oscillations from inductive coil or magnetic plunger settling. These corrupt velocity and acceleration estimates immediately after each transition. 
+
+The \emph{blind window} mechanism masks the $W_b$ frames following detected transitions and fills them via cubic spline interpolation from $W_c$ context frames. The spline is solved using the tridiagonal Thomas algorithm. Both $W_b$ and $W_c$ default to zero (disabled), allowing opt-in per session when bounce is measurable in raw telemetry.
+
+\section{Signal Processing Pipeline}
+
+\subsection{Smoothing}
+
+Five smoothing modes are supported, selectable independently for each derived channel (see Section~\ref{sec:bg-methods} for their mathematical properties): moving average, Gaussian, Savitzky-Golay (SG), median filter, and exponential moving average (EMA). The choice of default matters because onset timing accuracy depends directly on where a smoother places extrema.
+
+SG is the default for all derivative channels. Its polynomial fit preserves extremum positions and edge sharpness with zero phase shift—properties that moving averages and Gaussian filters lack, as they both shift peaks toward the window centre. Compared to a box filter of equivalent width, SG also suppresses broadband noise more effectively because it does not treat all frequencies within the pass-band equally. Precomputed integer coefficient tables cover all odd window sizes from 5 to 51, so the runtime cost is $O(n)$.
+
+EMA is the exception: its recursive causal form $y_t = \alpha x_t + (1-\alpha)y_{t-1}$ requires no future samples, making it the only choice compatible with on-device real-time inference. It is used exclusively for drift estimation (Section~\ref{sec:drift}). The median filter is available for sessions with visible impulse noise but is not the default, as its $O(n \log W)$ cost exceeds SG for large windows.
+
+\subsection{Sub-Frame Interpolation}
+
+Analog-switch firmware quantizes position to integer step120 values, limiting velocity resolution to approximately 33\,$\mu$m per frame. To recover sub-step velocity information, the pipeline optionally upsamples depth by an integer factor $k \in \{2, 4, 8, 16, 32\}$ before differentiation. The default $k=2$ doubles temporal resolution with negligible computational overhead.
+
+Four interpolation algorithms are available (see Section~\ref{sec:bg-methods} for their properties): natural cubic spline, Fritsch-Carlson monotone Hermite (PCHIP)~\cite{fritsch_carlson_1980}, Akima~\cite{akima_1970}, and Modified Akima (Makima).
+
+Makima is the default. Natural cubic splines globally couple all tangent values, which causes Runge-phenomenon ringing near the abrupt quantization steps that fast keystrokes produce—an artefact that inflates velocity estimates at onset and break boundaries. PCHIP eliminates ringing by enforcing monotonicity, but at the cost of flattening genuine smooth curves. Akima suppresses outlier slopes locally without enforcing monotonicity, giving smooth curves across irregular step patterns; Makima further prevents the zero-weight degeneracy that arises when adjacent slopes are equal and opposite—a frequent occurrence in quantized signals where consecutive samples share the same integer value. The result is that Makima correctly interpolates the short plateau regions between quantization steps without artificially zeroing the tangent, which would bias the subsequent velocity estimate toward zero.
+
+\subsection{Derived Channel Computation}
+
+\paragraph{Speed.} Velocity is estimated via a 2$\times$ Akima superresolution scheme: the depth signal is upsampled to $2n-1$ points by Akima interpolation, a centered finite difference is applied at the 2$\times$ rate with a halved divisor, and the result is downsampled back to $n$ points. This halved stencil reduces quantization-induced velocity noise compared to a plain adjacent centered difference, recovering sub-step motion information without introducing the phase delay of a low-pass filter.
+
+\paragraph{Acceleration.} Rather than differentiating the velocity estimate—which would compound quantization noise across two differentiation steps—acceleration is computed as the analytic second derivative of the Akima spline fitted to the depth signal. For a piecewise cubic Hermite spline, the second derivative at each interior knot $t_i$ evaluates to~\cite{akima_1970}:
+\begin{equation}
+    d''(t_i) = -6\,\Delta y_i + 2\,m_{i-1} + 4\,m_i
+    \label{eq:akima_d2}
+\end{equation}
+where $\Delta y_i = d[t_i] - d[t_{i-1}]$ is the interval increment and $m_j$ are the Akima weighted-slope tangent estimates. This form assumes unit knot spacing ($h_i = 1$ frame); the formula does not hold for non-uniform spacing, which could arise if the upsampled signal were subsequently sub-sampled before differentiation. Computing acceleration from depth directly, rather than from velocity, substantially reduces noise without requiring a higher-order interpolant.
+
+\paragraph{Jerk.} Jerk is the centered finite difference of the smoothed acceleration signal. Because it is a third-order derivative of a quantized signal, it is always post-smoothed before use in downstream processing.
+
+\paragraph{Drift.}
+\label{sec:drift}
+The drift channel estimates whether the user's resting finger position is drifting toward or away from actuation—a proxy for the resting-weight shift fatigue signature described in the Background. It is defined as:
+\begin{equation}
+    \mathrm{drift}[t] = \mathrm{EMA}_{20}\!\left(\hat{d}[t]\right) - \mathrm{EMA}_{200}\!\left(\hat{d}[t]\right)
+    \label{eq:drift}
+\end{equation}
+where $\hat{d}[t] = d[t]/120$ is normalized depth and $\mathrm{EMA}_\tau$ denotes a causal EMA with time constant $\tau$\,ms. The fast component ($\tau=20$\,ms) tracks instantaneous finger position; the slow component ($\tau=200$\,ms) tracks the recent resting baseline. Their difference, bounded approximately in $(-1, 1)$, is positive when the finger is moving toward the switch and negative when it is lifting. Sustained positive drift at rest indicates increasing resting-weight---a signature of flexor-fatigue onset~\cite{fatigue_flexor}. In the current system, the drift channel serves as a diagnostic signal exposed in the session review UI; integration of drift into the adaptive optimizer---for example, as a trigger for automatic re-calibration when sustained positive drift exceeds a threshold---is left as future work (Section~\ref{sec:conclusion-fw}).
+
+\section{Click-Intent Classification: Problem and Pipeline}
+
+Detecting click intent from analog depth telemetry is framed as a \emph{temporal sequence labeling} problem. Given a multichannel input sequence $\mathbf{X} \in \mathbb{R}^{C \times T}$ recorded at 1\,kHz, the model predicts a per-frame label sequence $\mathbf{y} \in \mathcal{Y}^T$ where $\mathcal{Y} = \{\texttt{BG},\,\texttt{MAKE\_ONSET},\,\texttt{CLICK\_HOLD},\,\texttt{BREAK\_ONSET}\}$. The four-class formulation is a deliberate ML design choice: it produces independent posterior sequences $p_m[t]$ and $p_b[t]$ for the make and break boundaries, which can be thresholded with separate sensitivities. A binary \texttt{CLICK}/\texttt{NO-CLICK} scheme would conflate these two structurally different events, forcing a single decision threshold to compromise between press-detection and release-detection precision.
+
+Class frequencies are highly skewed. In a typical 5-minute recording at 1\,kHz there are 300,000 frames. A user executing 2--3 clicks per second produces approximately 600--900 click events; with median press durations of 5--10\,ms (make onset), 60--80\,ms (hold), and 10--15\,ms (break onset), \texttt{MAKE\_ONSET} frames account for fewer than 3\,\% of the total. Class imbalance is therefore a first-class design constraint, not a post-hoc correction.
+
+The pipeline adopts a two-path architecture. The \emph{shallow path} (Random Forest, Gradient Boosted Trees) operates on hand-crafted sliding-window features; models train in under 10\,s on a typical session, enabling per-session retraining with negligible user-visible latency. The \emph{deep path} (OfflineFCN, DETR-style decoder) trains a fully-convolutional backbone and transformer decoder end-to-end on raw telemetry, exploiting a learned receptive field spanning seconds of context.
+
+\subsection{Weak Supervision via Geometric Auto-Labeling}
+
+The principal obstacle to supervised training is the absence of frame-level ground truth. No existing dataset provides per-millisecond annotations of click intent for analog HID telemetry, and manual annotation at 1\,kHz resolution is intractable—a 5-minute session contains 300,000 frames, and human annotators cannot reliably identify the exact frame at which pressing intent first manifests geometrically.
+
+The geometric auto-labeler acts as a \emph{programmatic labeling function} in the sense of Ratner et al.~\cite{ratner_snorkel_2020}: a domain-knowledge heuristic that assigns noisy frame-level labels to raw recordings, bootstrapping the supervised pipeline without any manual annotation. Only the single-function pattern is borrowed from that framework. The full Snorkel methodology---combining multiple labeling functions via a generative model that estimates each function's accuracy and resolves their disagreements---is not implemented here. A single labeling function is used, and label denoising is left entirely to the downstream discriminative classifier, which is designed to generalise beyond the heuristic's systematic failure modes rather than to correct them via a generative consensus step.
+
+Given the SG-smoothed depth signal and the hardware-reported binary click event, the auto-labeler assigns onset boundaries in two passes per click anchor:
+
+\textbf{Make onset.} Walk backward from the hardware make frame, tracking the running minimum of smoothed depth. The onset is the global depth minimum within the search window, subject to an early-stop condition: if depth has not improved for $p$ consecutive frames (\emph{plateau patience}, default $p = 15$), the search terminates. This recovers the local minimum immediately preceding the monotone downward motion leading to actuation—the earliest frame at which pressing intent is geometrically detectable from the telemetry.
+
+\textbf{Break onset.} Walk forward from the hardware make frame to the first frame where smoothed speed drops below $-h$ (hysteresis, default $h = 0.05$ step120/ms). This marks the earliest moment the finger begins releasing, before the hardware reports the break event. Overlapping label intervals between consecutive clicks are resolved by clipping the earlier label's end index.
+
+The labeling function has three known failure modes that bound its quality as a training signal:
+\begin{enumerate}
+    \item \textbf{Timing bias.} Contact-bounce transients displace the depth minimum by up to $W_b$ frames, causing make-onset labels to be systematically early relative to true intent.
+    \item \textbf{Plateau ambiguity.} A flat pre-press phase causes the backward search to terminate on the patience condition rather than at the true intent frame, placing the onset label too late.
+    \item \textbf{Missed onsets.} When hardware debounce suppresses the make event entirely, the frame receives a \texttt{BG} label despite containing an intended press.
+\end{enumerate}
+The ML classifier is designed to tolerate all three: asymmetric soft labels (Section~\ref{sec:training}) model boundary timing uncertainty explicitly, and the classifier's learned representations can detect onset cues that the heuristic misses.
+
+\subsection{Feature Engineering}
+\label{sec:features}
+
+The shallow models require a fixed-length feature vector per frame. For each frame $t$, a symmetric sliding window of half-width $W_h = 16$ frames is extracted and reduced to a hand-crafted feature vector. The window half-width of 16\,ms is chosen to cover the typical press-onset duration (5--15\,ms) without including the full click-hold phase, which would blur make and hold boundaries.
+
+\paragraph{Per-channel features.}
+Thirteen candidate features are defined for each input channel. Their relationship to the signal dynamics at click boundaries motivates their inclusion:
+\begin{itemize}
+    \item \textbf{Mean:} resting depth in the window; distinguishes \texttt{BG} (low depth) from \texttt{CLICK\_HOLD} (elevated depth at the actuation point).
+    \item \textbf{Standard deviation, range:} amplitude of motion within the window; both are low at rest and high during fast onset transitions.
+    \item \textbf{Slope:} linear trend coefficient; the primary discriminator between \texttt{BG} ($\approx 0$), \texttt{MAKE\_ONSET} (strongly negative, since step120 increases as the finger presses toward the switch), and \texttt{BREAK\_ONSET} (strongly positive).
+    \item \textbf{Zero-crossing rate:} count of sign changes of the mean-subtracted signal; elevated at contact-bounce transients and during tremor, low during clean press or release trajectories.
+    \item \textbf{Peak value, time-to-peak (TTP):} maximum depth within the window and its normalised position. TTP encodes trajectory asymmetry: a frame mid-rise has an early peak; a frame mid-fall has a late peak.
+    \item \textbf{Center velocity:} centered finite difference at the window midpoint; sharply peaked at onset frames and near-zero during hold and background.
+    \item \textbf{Minimum value, time-to-trough (TTT):} symmetric counterparts of peak and TTP; capture the release valley during \texttt{BREAK\_ONSET} windows.
+    \item \textbf{TKEO energy:} the Teager-Kaiser operator $\psi[t] = x[t]^2 - x[t{-}1]\,x[t{+}1]$, sensitive to amplitude-modulated transients characteristic of sharp impulsive clicks.
+    \item \textbf{Kurtosis:} fourth standardised moment; impulsive click transitions have high kurtosis; smooth ramps and flat backgrounds have low kurtosis.
+    \item \textbf{Willison amplitude (WAMP):} count of adjacent-sample differences exceeding a threshold; a coarse roughness measure borrowed from sEMG feature banks, sensitive to high-frequency jitter. The sEMG provenance is relevant: both sEMG and analog depth signals contain high-frequency noise from muscle tremor and contact transients respectively, making roughness-sensitive features from one domain applicable in the other.
+\end{itemize}
+
+The default configuration enables $N_\mathrm{feat} = 7$ features per channel (mean, slope, peak, center velocity, TTP, minimum, TTT), selected to span the primary discriminative dimensions—amplitude, trend, and trajectory asymmetry—within the data-efficiency budget of a 2--10 minute session. The remaining six features (standard deviation, range, zero-crossing rate, TKEO, kurtosis, WAMP) are available when longer recordings reduce overfitting risk.
+
+\paragraph{Cross-channel features.}
+Five cross-channel features capture left--right button coordination:
+\begin{enumerate}
+    \item Pearson correlation $\rho(\mathbf{x}_{L}, \mathbf{x}_{R})$ between the left and right analog channels.
+    \item $|\rho|$, the absolute correlation regardless of sign.
+    \item Binary indicator: digital event fires during an analog upstroke on the left side.
+    \item Binary indicator: digital event fires during an analog upstroke on the right side.
+    \item Maximum analog value across both channels.
+\end{enumerate}
+These features distinguish single-button clicks (asynchronous L/R analog motion, single digital event) from two-button combinations (correlated L/R motion, matched digital events), and encode whether the physical press is consistent with a deliberate actuation.
+
+\paragraph{Receptive field.}
+The sliding window imposes a hand-crafted temporal receptive field of $2W_h = 32$ frames. This is a deliberate constraint for the shallow path: interpretability and sub-second training on short per-user sessions take priority over learned temporal structure. The full feature vector has dimension:
+\begin{equation}
+    F = C_\mathrm{ch} \times N_\mathrm{feat} + 5
+    \label{eq:feature_dim}
+\end{equation}
+where $C_\mathrm{ch} = 4$ is the number of input channels (\texttt{analog\_L}, \texttt{analog\_R}, \texttt{digital\_L}, \texttt{digital\_R}), and the constant 5 accounts for the cross-channel features (Section~\ref{sec:features}). The feature matrix $[T \times F]$ is computed in a single vectorised pass over strided sliding-window views, processed in chunks of 50,000 frames to keep peak memory bounded. The deep path lifts the 32\,ms receptive field constraint via exponential dilation (Section~\ref{sec:model_zoo}).
+
+\subsection{Model Architectures}
+\label{sec:model_zoo}
+
+Four models span a complexity--data-efficiency spectrum, summarised in Table~\ref{tab:models}. All share the 4-class prediction target and expose compatible per-frame probability outputs.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{lllll}
+\toprule
+Model & Input & Receptive field & Train time (CPU) & Decode \\
+\midrule
+Random Forest & Features $[\,F\,]$ & 32\,ms (fixed) & ${<}\,1$\,s & Per-frame \\
+Gradient Boosted & Features $[\,F\,]$ & 32\,ms (fixed) & ${<}\,10$\,s & Per-frame \\
+OfflineFCN & Raw $[C{\times}T]$ & ${\pm}\,1530$\,ms & 10--60\,s & Per-frame \\
+DETR-style (on FCN) & Raw $[C{\times}T]$ & ${\pm}\,1530$\,ms & 20--120\,s & Set prediction \\
+\bottomrule
+\end{tabular}
+\caption{Click-intent model comparison. Training times are for a 5-minute, 1\,kHz recording on CPU.}
+\label{tab:models}
+\end{table}
+
+\paragraph{Random Forest.}
+A Random Forest~\cite{breiman_rf_2001} of 100 estimators (configured in \texttt{random\_forest.py:RandomForestConfig}) with maximum depth 12, minimum leaf size 4, and feature subsampling strategy \texttt{sqrt} is trained on the hand-crafted feature matrix using scikit-learn. RF is the default model for three reasons: it trains deterministically in under one second on a 5-minute session, provides well-calibrated posterior probabilities without label smoothing, and is robust to irrelevant features through random subspace selection at each split. Class imbalance is handled via inverse-frequency weighting (\texttt{class\_weight=`balanced'}), which reweights the bootstrap sample seen by each tree so that the effective class prior is uniform, scaling rare onset frames by $\tfrac{\mathrm{n\_samples}}{\mathrm{n\_classes} \cdot \mathrm{count}[\mathrm{class}]}$ relative to background frames.
+
+\paragraph{Gradient Boosted Trees.}
+A LightGBM~\cite{ke_lightgbm_2017} gradient boosted classifier (configured in \texttt{gradient\_boosted.py:GradientBoostedConfig}) with 500 boosting rounds, learning rate 0.05, 31 leaves, minimum data per leaf 20, and early stopping on held-out validation loss (patience 50 rounds) is trained on the same feature matrix. Unlike RF, sequential boosting corrects the residual of the current ensemble at each round, achieving lower bias at the cost of greater sensitivity to hyperparameters. GBT is preferred over RF when probability calibration is critical: its gradient-descent training exposes a custom differentiable objective, enabling the asymmetric soft-label loss (Section~\ref{sec:training}) to be optimised end-to-end via custom objectives \texttt{soft\_multiclass\_objective} and \texttt{focal\_multiclass\_objective} defined in the training pipeline. By contrast, RF converts soft targets to hard labels before tree-fitting, discarding the distributional information in the soft targets and limiting its ability to learn from the directional timing uncertainty that soft labels encode.
+
+\paragraph{OfflineFCN.}
+The OfflineFCN is a fully-convolutional dilated residual network~\cite{van_den_oord_wavenet_2016} operating directly on the raw 4-channel telemetry $\mathbf{X} \in \mathbb{R}^{4 \times T}$ (implemented in \texttt{fcn.py:FCNModel}):
+\begin{equation}
+    \hat{\mathbf{Y}} = \mathrm{Classifier}\!\left(\mathcal{B}_7 \circ \cdots \circ \mathcal{B}_0\!\left(\mathrm{InputProj}(\mathbf{X})\right)\right)
+    \label{eq:fcn}
+\end{equation}
+where $\mathrm{InputProj}$ is a pointwise $\mathrm{Conv1d}$ projecting $C = 4$ input channels to $H = 64$ hidden units, each $\mathcal{B}_i$ is a Non-Causal Residual Block at dilation $d_i = 2^i$ for $i \in \{0,\ldots,7\}$, and $\mathrm{Classifier}$ is a pointwise $\mathrm{Conv1d}$ mapping 64 units to 4 class logits. Each residual block applies two symmetric-padded dilated convolutions (kernel size $k = 7$, ReLU activations, dropout 0.1) with a residual skip:
+\begin{equation}
+    \mathcal{B}_i(\mathbf{h}) = \mathrm{ReLU}\!\left(\mathrm{DilConv}_{k,d_i}\!\left(\mathrm{ReLU}\!\left(\mathrm{DilConv}_{k,d_i}(\mathbf{h})\right)\right) + \mathbf{W}_{\!\mathrm{res}}\,\mathbf{h}\right)
+    \label{eq:resblock}
+\end{equation}
+Symmetric padding keeps output length equal to input length at every layer; the network is fully convolutional and processes any-length sequences in a single forward pass. The effective temporal receptive field of the stacked 8-block network is:
+\begin{equation}
+    \mathrm{RF} = 2\,(k-1)\!\sum_{i=0}^{7} 2^i = 2 \times 6 \times 255 = 3060 \text{ frames} = \pm 1530\,\text{ms}
+    \label{eq:rf}
+\end{equation}
+Each output frame has access to $\pm 1530$\,ms of temporal context—enough to observe a full pre-press approach and the complete post-release return in one forward pass. This is qualitatively different from the 32\,ms hand-crafted window: the FCN can learn to use the slow resting-drift signal hundreds of milliseconds before an onset as a predictor of imminent actuation, a feature that no fixed short window can represent. The model trains with focal BCE loss ($\gamma = 2.0$) on 3-channel heatmap targets (make-onset, break-onset, hold-state), allowing soft onset detection independent of background suppression.
+
+\paragraph{DETR-style temporal decoder.}
+The DETR-style output head replaces sequence-constraint decoding with set prediction over temporal events. The OfflineFCN backbone produces context-rich frame embeddings, and a transformer decoder consumes a fixed set of learned event queries to predict click-boundary hypotheses (make onset, hold interval support, break onset) plus confidence scores. Training uses bipartite matching between predicted and target events, so each target is assigned to at most one query and duplicate predictions are penalized directly in the loss.
+
+Compared with per-frame argmax decoding, this design explicitly models event-level structure and reduces fragmented boundary predictions. Compared with transition-constrained decoders, it removes hand-specified transition assumptions and instead learns boundary consistency through matching and query interaction. This aligns better with the current objective of unified event prediction from long-context telemetry while preserving the same upstream FCN receptive field.
+
+\subsection{Training Regime}
+\label{sec:training}
+
+\paragraph{Class imbalance.}
+The two model families handle class imbalance differently. For RF and GBT, inverse-frequency class weights ensure the effective training prior over classes is uniform, upweighting rare onset frames relative to the dominant background. For the OfflineFCN, \emph{focal loss}~\cite{lin_focal_2017} with focusing parameter $\gamma = 2.0$ is used in place of standard cross-entropy:
+\begin{equation}
+    \mathcal{L}_\mathrm{focal}(\hat{p}, y) = -\sum_t \bigl(1 - \hat{p}_{y_t}[t]\bigr)^\gamma \log \hat{p}_{y_t}[t]
+    \label{eq:focal}
+\end{equation}
+where $\hat{p}_{y_t}[t]$ is the predicted probability for the true class at frame $t$. The modulating factor $(1 - \hat{p}_{y_t})^\gamma$ downweights the gradient contribution of frames the model already classifies correctly with high confidence. Because background frames become trivially classifiable after a few training epochs, their gradient share collapses under focal loss, concentrating remaining learning capacity on the harder onset and break frames.
+
+\paragraph{Asymmetric soft labels.}
+Hard binary labels at the geometric onset frame create a training discontinuity: adjacent frames on opposite sides of the boundary are nearly identical in feature space yet receive opposing hard labels, causing instability and sensitivity to auto-labeler timing errors. Replacing hard targets with per-class Gaussian soft labels of width $\sigma$ frames smooths each boundary into a probability ramp.
+
+The system uses \emph{asymmetric} Gaussians (implemented in \texttt{click\_intent/data.py:\_soft\_single\_channel()}): left-side decay $\sigma_\mathrm{left}$ and right-side decay $\sigma_\mathrm{right}$ are independently configurable for both \texttt{MAKE\_ONSET} and \texttt{BREAK\_ONSET}. For \texttt{MAKE\_ONSET}, a narrow right-side sigma ($\sigma_{\mathrm{right},m}$, typically 5\,ms) reflects the sharp downward acceleration immediately following press intent, while a wider left-side sigma ($\sigma_{\mathrm{left},m}$, typically 15\,ms) absorbs timing uncertainty introduced by the auto-labeler's backward search (Section~\ref{sec:auto-label}). For \texttt{BREAK\_ONSET}, approximately symmetric sigmas (typically $\sigma_{\mathrm{left},b} = \sigma_{\mathrm{right},b} = 10\,\text{ms}$) are appropriate since releases are physically more gradual. Residual probability mass is absorbed by the \texttt{BG} class via normalisation, ensuring the soft-label distribution sums exactly to 1.0 at each frame. This per-class asymmetry is a deliberate model of the \emph{directional timing bias} of the geometric labeling heuristic: the auto-labeler's backward-search strategy biases make-onset labels early, while release detection is more symmetric. The LightGBM model trains directly on these soft distributions via custom objectives (\texttt{soft\_multiclass\_objective}, \texttt{focal\_multiclass\_objective}), learning to exploit the distributional structure without hard-label quantisation.
+
+\paragraph{Session-level training and temporal split.}
+Splitting a time-series at a random frame introduces data leakage: the model's receptive field straddles the split boundary, exposing future context from the validation set during training. The training protocol instead splits by \emph{click boundary}: clicks $1$ through $N_\mathrm{train}$ form the training set, and clicks $N_\mathrm{train} + 1$ through $N_\mathrm{total}$ form the validation set, preserving temporal ordering and isolating the validation clicks from all training gradients. The default split ratio is 80/20 ($N_\mathrm{train} = \lfloor 0.8\, N_\mathrm{total} \rfloor$), matching the evaluation protocol in Chapter~\ref{chap:eval}.
+
+All models are trained per-session, fitting a fresh model on each new recording rather than updating a shared global model. This personalisation is intentional: click biomechanics vary substantially across users (resting depth, press velocity, release curvature) and across devices (different switch mechanisms produce different depth profiles for the same finger motion). A per-user model trained on the user's own telemetry outperforms a cross-user population model on their specific control signature. The sub-second training times of RF and GBT make per-session retraining practical without user-visible latency; the FCN's longer training time (10--60\,s) is amortised over the session-review period.
+
+\subsection{Segmentation: Make and Break Event Recovery}
+
+Given per-frame posterior sequences $p_m[t]$ and $p_b[t]$ produced by the classifier, the segmentation algorithm recovers discrete click intervals:
+\begin{enumerate}
+    \item Scan $p_m[t]$ for a contiguous run of frames exceeding the make threshold $\theta_m$. Within the run, elect the onset frame by one of three strategies: argmax of $p_m$ (\texttt{peak}), median of the plateau at $\geq 99.5\%$ of peak (\texttt{plateau\_median}), or the frame of steepest positive gradient (\texttt{steepest\_rise}).
+    \item Look up to $L_b = 500$ frames ahead in $p_b[t]$ for a run exceeding the break threshold $\theta_b$, bounded by the start of the next make run. The break onset frame is elected by the symmetric steepest-fall strategy. If no break run completes within this window, fall back to the first frame after $t_\mathrm{start} + T_\mathrm{min}$ where $p_m < \theta_m/2$.
+    \item Accept the interval $[t_\mathrm{start},\, t_\mathrm{end}]$ if its duration exceeds the minimum click length $T_\mathrm{min}$.
+\end{enumerate}
+
+Default thresholds $\theta_m = \theta_b = 0.02$ are deliberately low: undetected clicks (false negatives) degrade the optimizer's recall more severely than marginally early detections, so the segmentation errs toward sensitivity.
+
+\section{Adaptive Parameter Optimization}
+
+\subsection{The Optimization Objective}
+
+For a set of click annotations and a candidate parameter configuration $(\theta)$, the optimizer simulates the firmware's RT state machine on the recorded telemetry and compares the resulting \emph{simulated} make/break events against the annotated \emph{labeled} events. The unified loss is:
+\begin{equation}
+    \mathcal{L}(\theta) = \bar{\ell}(\theta) + \lambda_\mathrm{miss} \cdot N_\mathrm{miss}(\theta) + \lambda_\mathrm{false} \cdot N_\mathrm{false}(\theta) + \lambda_\mathrm{early} \cdot N_\mathrm{early}(\theta)
+    \label{eq:loss}
+\end{equation}
+Here $\bar{\ell}$ is the mean click-to-threshold distance across matched events, expressed in frames (equivalently, milliseconds at 1\,kHz); a loss of 1.0 corresponds to a mean 1\,ms latency excess per click. $N_\mathrm{miss}$ and $N_\mathrm{false}$ count false-negative and false-positive simulated clicks, respectively; $N_\mathrm{early}$ counts premature make/break events relative to the labeled intent boundary.
+
+Default penalty weights are $\lambda_\mathrm{miss} = 10$, $\lambda_\mathrm{false} = 5$, $\lambda_\mathrm{early} = 5$. These weights have a concrete unit interpretation: because $\bar{\ell}$ is expressed in frames (= ms at 1\,kHz), $\lambda_\mathrm{miss} = 10$ converts each missed click into a 10\,ms latency equivalent, and $\lambda_\mathrm{false} = 5$ converts each false-positive into a 5\,ms equivalent. The asymmetric weighting $\lambda_\mathrm{miss} > \lambda_\mathrm{false}$ reflects the operational cost structure: a missed click forces the user to re-issue the input, disrupting game state and compounding both mechanical and cognitive latency; a spurious click can often be compensated for in-session. The equal weights for false-positives and premature-actuation events ($\lambda_\mathrm{false} = \lambda_\mathrm{early} = 5$) treat these as equivalent forms of mis-registration—each represents a click boundary the firmware places outside the user's intended window.
+
+These calibrations are informed domain priors, not derived from a user study. A sensitivity analysis over $\lambda_\mathrm{miss}$ and $\lambda_\mathrm{false}$ (varying each by $\pm$50\%) is included in the evaluation (Section~\ref{sec:lambda-sensitivity}) to quantify how sensitive the recommended Pareto frontier is to the choice of weights.
+
+\subsection{Single-Parameter Threshold Sweep}
+
+For the simplified case of tuning a single scalar threshold—such as the actuation point alone with RT disabled—the system delegates to a Covariance Matrix Adaptation Evolution Strategy (CMA-ES)~\cite{hansen_cma_2016} solver compiled as a native Rust binary (\texttt{gsense-optimizer}). CMA-ES adapts its step-size distribution to the local curvature of the objective landscape, converging to the optimum in typically 20--40 evaluations regardless of starting point.
+
+The sweep result is a \emph{trade-off curve}: a set of Pareto-optimal (threshold, loss, recall, mean latency) points from which the user selects a configuration matching their tolerance for latency versus error rate.
+
+\subsection{Joint AP and RT Optimization}
+
+When both AP ($d_\mathrm{act}$) and RT sensitivity ($\Delta_\mathrm{RT}$) are tuned simultaneously, the search space is two-dimensional. The same CMA-ES engine operates over the joint space, evaluating $(d_\mathrm{act}, \Delta_\mathrm{RT})$ pairs against the loss of Equation~\ref{eq:loss} computed across both make and break events. A pool of concurrent worker processes evaluates candidates in parallel; incoming jobs are dispatched to whichever worker is idle, so throughput scales linearly with pool size.
+
+A two-dimensional grid search is an alternative: a $50 \times 50$ grid of $(AP, RT)$ candidates at 5\,ms per evaluation costs approximately 12.5 seconds and covers the space exhaustively. CMA-ES is preferred here for two reasons. First, the same optimizer binary handles both the 1D single-threshold case and the 2D joint case without branching, keeping the implementation uniform. Second, the search space is expected to expand in future versions of the system---a drift-threshold parameter for fatigue-triggered re-calibration would extend the search to 3D, where CMA-ES's $O(n^2)$ convergence advantage over an $O(N^n)$ grid becomes decisive. The current 2D evaluation includes a grid-search comparison as a baseline to confirm that CMA-ES finds equivalent or better solutions (Section~\ref{sec:optimizer-results}).
+
+The optimizer reports the full evaluated grid alongside the Pareto frontier in the recall--latency plane, enabling users to visualize the fundamental trade-off between aggressive RT settings (high recall, higher accidental-actuation risk) and conservative settings (lower latency variance, higher error tolerance).
+
+\subsection{Hyperparameter Tuning via Bayesian Optimization}
+\label{sec:hparam}
+
+Classifier hyperparameters—feature window size, number of estimators, maximum tree depth, leaf sample count—are tuned using the Tree-structured Parzen Estimator (TPE)~\cite{bergstra_tpe_2011} as implemented in the Optuna framework~\cite{optuna_akiba_2019}. Each Optuna study is persisted to a SQLite file, enabling sweeps to be paused and resumed across sessions without restarting from scratch. The objective is the make-onset F1 score on a held-out validation split. For small search spaces whose Cartesian product contains at most 300 configurations, Optuna automatically switches to a GridSampler to guarantee exhaustive coverage rather than stochastic approximation.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%
