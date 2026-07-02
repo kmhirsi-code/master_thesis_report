@@ -26,15 +26,14 @@ The central hypothesis of this thesis is that per-user variation in click teleme
     \item A four-class temporal sequence classifier with two model paths: a shallow
           path (Random Forest, Gradient Boosted Trees) operating on hand-crafted
           sliding-window features for sub-second per-session training, and a deep path
-          (dilated residual FCN, DETR-style decoder) operating on raw telemetry with a
+          (dilated residual FCN) operating on raw telemetry with a
           $\pm$1530\,ms learned receptive field.
     \item A joint CMA-ES optimizer that simulates the peripheral firmware's Rapid
           Trigger state machine and finds Pareto-optimal (AP, RT) configurations,
           replacing manual threshold tuning with a data-driven trade-off curve.
 \end{itemize}
 
-While not a primary algorithmic contribution, the work also includes a small HCI-facing
-component: minigames that replicate the most popular games that provide an environment for user to quickly get a recommendation.
+While not a primary algorithmic contribution, the work also includes a small HCI-facing component: purpose-built minigames that recreate common competitive-gaming input scenarios, providing a structured environment for users to generate calibration telemetry and receive a hardware recommendation.
 The recommendation outputs are structured for interpretability (trade-off views and
 comparative candidate points), so users can inspect why a suggested AP/RT point is proposed.
 

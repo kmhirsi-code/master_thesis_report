@@ -88,6 +88,8 @@ the client via IPC\@: an analog decoder and translator (Python\,+\,TypeScript), 
 machine learning manager (Python), and a hardware FSM simulator and optimizer (Rust).}
 \label{fig:system_arch}
 \end{figure*}
+
+\section{Data Labeling Methodology}
 \label{sec:labeling}
 
 Raw analog signals are inherently noisy. Before any label placement, the depth telemetry is smoothed using Modified Akima (MAKIMA) interpolation. MAKIMA was specifically chosen because it preserves signal monotonicity and avoids the severe overshoots characteristic of standard cubic splines, which is critical for accurate boundary detection on a signal with sharp transitions.
@@ -118,43 +120,58 @@ The full extent and breakdown of the resulting annotated corpus is described in 
 \section{Data Preparation Pipeline}
 \label{sec:data_prep}
 
-The data preparation phase transforms raw analog and digital sensor recordings, along with the human-verified labels, into normalized arrays ready for supervised training. The pipeline ensures all three model architectures (Random Forest, Gradient Boosted Trees, and FCN) receive identical preprocessed inputs (\texttt{X\_train} and \texttt{y\_train}), standardizing the data ingestion across different algorithmic paradigms. The pipeline consists of loading, preprocessing, sequence splitting, normalization, and model-specific framing.
-
-\subsection{Loading and Frame Extraction}
-Each recording consists of sensor readings recorded at 1\,kHz and a corresponding sidecar containing manually annotated segments (start index, end index, channel, class, and source). Only manual segments are used for training; heuristically generated ("auto") segments are ignored to avoid reinforcing algorithmic bias. 
-
-During loading, the raw frame extraction normalizes the 120-level continuous analog data to a float range $\in [0, 1]$ and casts the binary digital channels to \{0.0, 1.0\}. The segments map to three specific target labels---Make Onset, Click Hold, and Break Onset---with surrounding inactivity classified as Background. Make and Break boundaries are padded symmetrically with an onset radius of 8 frames ($\pm 8$\,ms). Both raw arrays and parsed labels are serialized efficiently with memory caching to accelerate iterative re-loading.
-
-\subsection{Preprocessing and Signal Augmentation}
-\label{sec:drift}
-Preprocessing parameters dictate the specific transformations applied to the raw channels before splitting. 
-The analog streams optionally undergo temporal smoothing (e.g., Gaussian, Savitzky-Golay, or moving average). Critically, derivative features are extracted to form the kinematic profiles essential for classification. A zero-phase Akima-spline derivation calculates the velocity, acceleration, and jerk to circumvent causal shift bias. Finally, a drift profile representing resting-weight baseline shifts is computed via the difference of fast and slow Exponential Moving Averages (EMA).
-
-Decimation is applied selectively to downsample continuous channels via an 8th-order zero-phase Chebyshev IIR low-pass filter to prevent aliasing, while discrete digital signals are only strided. 
-
-To improve computational tractability, lengthy periods of background inactivity are stripped. A rolling-window activity mask checks the mean amplitude and statistical variance against configurable thresholds to drop uninformative segments, outputting independent labeled sub-sequences while retaining predefined margins around active events. 
-
-\subsection{Splitting, Normalization, and Sample Weighting}
-The resultant sub-sequences are partitioned into train, validation, and test datasets. To ensure rigorous evaluation isolated from individual bio-signatures, the preferred k-fold splitting strategy acts at the participant level, strictly grouping segments by a \texttt{user\_id} extracted from the file metadata. A sequence allocation ensures that no participant spans both the training and evaluation splits simultaneously.
-
-Z-score normalization is fitted exclusively on the training split to mirror live inference constraints. To prevent the prevalent background noise from anchoring the scale, baseline standard deviations for kinematic features (velocity, acceleration, jerk) are calculated against non-background frames. 
-
-A critical step involves generating click-balanced sample weights to address extreme class and participant imbalance. Because a 2\,ms 'tap' action contains a fraction of the data compared to a 200\,ms 'hold' action, per-frame training weights are assigned inversely proportional to the duration of the click event and the total number of events produced by that user. This mechanism equalizes participant contributions and ensures short transient actions carry equal weight in the loss surface against sustained holds.
-
-\subsection{Model-Specific Ingestion}
-In the final stage, sequence arrays are reshaped explicitly for the respective model architectures.
-For the Random Forest and Gradient Boosted Trees, sliding-window feature extraction converts temporal frames into heavily flattened tabular vectors. The window (e.g., 33 frames) processes local context to produce up to 69 composite static features per frame (such as range, zero-crossing rate, TKEO max, or kurtosis). 
-
-In contrast, the FCN approach skips tabular extraction. Raw sequence tensors are ingested as batches. Labels are dynamically converted into a 3-channel heatmap reflecting target classes, mapping Make/Break onsets to probabilistic Gaussian bumps. When configured for localized sequence training, arrays are padded with an 8-frame gap silence delimiter, which prevents the sliding sequence generator from crossing temporal boundaries.
+Raw recordings and their human-verified labels are transformed into normalized arrays shared by all three model architectures. Several design decisions govern this pipeline. First, onset boundary zones are widened by a small tolerance radius to absorb natural annotation imprecision, but are adaptively clamped against adjacent segment boundaries to prevent cross-segment label contamination. Second, derivative channels (velocity, acceleration, jerk, and resting-drift) are derived using zero-phase filtering to avoid introducing causal shift artifacts. Third, idle background periods are trimmed by an activity mask to reduce the dominance of background frames without discarding legitimate negative examples. Fourth, dataset splits are performed at the participant level so no individual's recordings span both training and evaluation. Finally, normalization statistics are fitted on the training partition only, and statistics for kinematic channels are computed over active frames exclusively to prevent background mass from compressing the feature scale. Concrete implementation details---feature extraction windows, normalization constants, and weighting formulas---are described in Section~\ref{sec:ml_backend}.
 
 
 \section{Click-Intent Sequence Modeling}
 \label{sec:modeling}
-To understand user intent, the system models the data as a supervised time-series segmentation problem, mapped down to a per-frame classification task. The core feature engineering relies heavily on extracting analytical "distant context probes" that provide models with past and future temporal context, combined with instantaneous features like analog speed, digital signals, and distance to dynamic thresholds.
 
-The primary algorithm used for inference is a Random Forest (RF) classifier. More advanced architectures, such as Gradient Boosted Trees (GBT) accommodating custom loss functions, and Fully Dilated Convolutional Networks (FDCN) for direct raw sequence temporal modeling, operate within the same structural framework.
+The click-intent problem is formulated as a per-frame four-class temporal segmentation task over continuous 1\,kHz sensor streams. Each frame is assigned one of four mutually exclusive labels: Background, Make Onset, Click Hold, and Break Onset. Three model architectures are supported, positioned along a speed--accuracy trade-off curve suited to the realities of on-device, per-session deployment.
+
+\subsection{Random Forest}
+The Random Forest classifier operates on hand-crafted sliding-window features extracted from a local neighbourhood around each frame. It is the primary production model. Its main strength is training speed: a full session retrains in a few minutes on a consumer CPU. Feature importance scores are directly interpretable, exposing which kinematic cues drive the model's decisions. The main weakness is a bounded temporal horizon limited to a few tens of milliseconds of context, which is sufficient for most click onset detection but may struggle on ambiguous edge cases where the intent signal unfolds over a longer transition. This architecture also fails to capture long-range dependencies and long context of user behavior. The pipeline also requires domain knowledge to design and cannot adapt to latent signal structure that was not anticipated during feature engineering.
+
+\subsection{Gradient Boosted Trees}
+The Gradient Boosted Trees model shares the same feature extraction pipeline as the Random Forest but replaces the ensemble learner with sequential boosting, which iteratively focuses on the residuals of prior trees. Its key advantage is support for custom loss functions: a focal loss variant down-weights easy background frames, and a Gaussian soft-label objective encodes labeling uncertainty at onset boundaries---both of which reduce over-confidence on the majority background class. Early stopping against a held-out validation metric limits overfitting. The weaknesses are slower training than the Random Forest, greater hyperparameter sensitivity, and the same fundamental constraint of a short-context hand-crafted feature representation.
+
+A distinct design choice for the GBT path is the use of \textbf{asymmetric soft labels}. Standard hard labels treat each onset frame as a binary ground truth, but human annotators naturally place boundaries with some imprecision, and the physiological consequences of timing errors are asymmetric. For the Make Onset, detecting slightly \emph{early} is acceptable (the finger is already moving), whereas a \emph{late} detection directly increases perceived input latency. Conversely, for the Break Onset, a slightly \emph{late} detection is tolerable (the click has already been registered), whereas an \emph{early} detection prematurely resets the input state. The soft label generator therefore uses a split-normal Gaussian centred on each onset frame: a wide left standard deviation and narrow right standard deviation for Make, and narrow left and wide right for Break. This encodes directional uncertainty directly into the training target, preventing the model from being equally penalised for both error directions.
+
+\subsection{Fully Convolutional Network}
+The dilated residual FCN operates directly on raw normalized sensor streams without manual feature engineering. Stacked dilated convolutions grow the receptive field exponentially: with eight dilation stages and a kernel size of 7, the effective receptive field spans approximately 3\,060 frames ($\approx$3\,s at 1\,kHz), allowing the model to condition each frame's prediction on long-range temporal context---pre-click muscle tension ramp-ups and post-click rebound dynamics that fall well outside any practical sliding window. The model is trained end-to-end on a three-channel Gaussian heatmap target, producing soft onset probability curves rather than hard class assignments. The trade-off is higher computational cost: the FCN requires a GPU or significantly longer CPU training time, is less interpretable than tree-based models, and benefits more strongly from larger datasets. It is therefore positioned as the high-accuracy architecture for offline post-processing, while the Random Forest handles latency-sensitive or resource-constrained deployment.
+
+\section{From Classification to Segmentation}
+\label{sec:segmentation}
+
+The per-frame classifier produces a four-class probability array over the full recording. Converting these continuous probability outputs into discrete (start, end) click segments requires three sequential design choices: identifying candidate onset regions, electing a single representative frame from each region, and pairing each Make onset region with its corresponding Break onset region.
+
+\paragraph{Candidate run detection.}
+Two separate probability channels are extracted from the classifier output: the Make Onset probability and the Break Onset probability. Contiguous regions above a configurable threshold in each channel are identified as candidate runs. For Make runs, a Schmitt-trigger hysteresis is applied: a run opens when the Make probability exceeds the make threshold and remains open until it falls below half that threshold. This bridging behavior prevents a single physical press---whose probability hump can dip below the threshold due to quantization noise or softmax saturation---from being fragmented into multiple spurious candidates. Break runs are detected with a simpler thresholding scheme.
+
+\paragraph{Onset frame election.}
+Within each candidate run, a single frame must be elected as the representative onset. Three strategies are evaluated: \textbf{peak} selects the argmax frame; \textbf{plateau median} identifies the set of frames within 0.5\% of the peak probability (the plateau) and returns the median frame index, falling back to the argmax when the plateau collapses to a single point; \textbf{steepest rise/fall} selects the frame of maximum gradient, corresponding to the inflection point of the probability curve and providing an estimate that is independent of plateau saturation effects. The optimal strategy and its associated make and break threshold values are selected jointly via a Bayesian hyperparameter sweep (Optuna) over the validation set, optimizing the Intersection over Union (IoU) between predicted and ground-truth click segments.
+
+\paragraph{Make--Break pairing.}
+Given a set of elected Make onset frames and Break onset frames, a final matching step assigns each Make to exactly one Break. Three pairing strategies are available. The simplest is a \textbf{greedy first-fit} approach: each Make is paired with the first eligible Break that falls within the Make run's search window. This serves as a baseline. The second strategy formulates the assignment as a \textbf{linear sum assignment problem} (Hungarian algorithm), constructing a cost matrix whose entry $(i,j)$ is the negative geometric mean of the Make and Break confidence scores; the global minimum-cost assignment is then solved exactly in $O(n^3)$ time, ensuring no Break is claimed by more than one Make. The third strategy extends the Hungarian approach with a \textbf{trained pairing scorer}: a logistic regression classifier, fit on positive and negative (Make, Break) pairs extracted from the training set, replaces the raw confidence product as the cost signal. The scorer uses six features per candidate pair---Make confidence, Break confidence, log-duration between the elected frames, Make run width, Break run width, and the number of competing Break runs within the Make's search window---and is trained with balanced class weights to handle the natural scarcity of positive (correct) pairs. The optimal pairing strategy is selected by evaluating all three on the validation set IoU, and the chosen strategy is stored alongside the model weights so inference uses identical pairing logic.
 
 \section{Parameter Optimization}
-Once intent boundaries are parameterized, the system tests potential hardware settings without physically altering the peripheral. The engine simulates the analog mouse click Finite State Machine (FSM) frame-by-frame, testing its actuation behavior both with and without Rapid Trigger logic enabled.
+\label{sec:optimizer}
 
-The optimizer relies on the Covariance Matrix Adaptation Evolution Strategy (CMA-ES) to explore the parameter space. Candidates are evaluated through a multi-objective hand-crafted loss function that balances Recall (not missing clicks), Precision (avoiding accidental misclicks), and Latency (an early prediction penalty aimed at minimizing the temporal distance between simulated triggers and true user intent).
+Once click-intent boundaries are extracted, the system searches for the hardware threshold pair (Actuation Point, Rapid Trigger sensitivity) that best reproduces those boundaries in firmware.
+
+\subsection{Firmware State Machine Simulation}
+The optimizer embeds a frame-accurate simulation of the two firmware trigger modes. The \textbf{simple threshold} mode is a 2-state machine: a press is registered when the analog depth signal crosses the make threshold upward, and released when it crosses the break threshold downward. The \textbf{Rapid Trigger} mode is a 3-state machine (Idle $\to$ Pressed $\to$ RT-Released) that tracks rolling peaks and valleys: once pressed, the button releases when depth drops by more than the RT sensitivity below the last peak; from the released state, it re-actuates when depth rises by more than the sensitivity above the last valley, and fully resets to Idle only when the signal returns to zero. Both modes mirror the exact transition rules in the device firmware, validated against hardware-logged event timestamps. The full state transition diagrams for both modes are given in Figures~\ref{fig:fsm_nort} and~\ref{fig:fsm_rt} in Chapter~\ref{chap:implementation}.
+
+\subsection{Search Space and Objective}
+The search space is two-dimensional: make threshold and break threshold, each drawn from 20 discrete depth levels (0--120 in steps of 6, matching the firmware's integer representation). CMA-ES is chosen over grid search for two reasons. First, the optimal make and break thresholds are correlated---a higher actuation point typically permits a proportionally larger RT sensitivity---so a method that adapts the full covariance matrix between the two parameters converges significantly faster than diagonal-step methods. Second, the firmware FSM is cheap to evaluate (microseconds per recording), so the $O(n^2)$ CMA-ES convergence budget is a practical constraint on search iterations rather than compute time.
+
+Each candidate threshold pair is scored by a unified scalar loss:
+\[
+\begin{aligned}
+  \mathcal{L} ={}& \bar{d}_{\text{latency}} + w_{\text{miss}} \cdot N_{\text{miss}} + w_{\text{fp}} \cdot N_{\text{fp}} \\
+  & {}+ w_{\text{early}} \cdot (N_{\text{make\_err}} + N_{\text{break\_err}})
+\end{aligned}
+\]
+where $\bar{d}_{\text{latency}}$ is the average temporal distance between each simulated trigger and its matched ground-truth intent boundary, $N_{\text{miss}}$ counts undetected real clicks, $N_{\text{fp}}$ counts phantom clicks, and $N_{\text{make\_err}} + N_{\text{break\_err}}$ penalises timing errors at boundaries. The penalty weights $(w_{\text{miss}}, w_{\text{fp}}, w_{\text{early}})$ are configurable and allow the user to express preferences (e.g.\ prioritise recall over precision for a competitive FPS player).
+
+\subsection{Pareto Frontier and Output}
+The optimizer is run independently for each candidate feature combination (different preprocessing signals can serve as the make or break detection input). After convergence, a Pareto frontier over \{error rate, average latency\} is computed and returned to the front-end client for visualization. The user inspects the trade-off curve and selects a Pareto-optimal configuration, rather than receiving a single black-box recommendation. A complementary 40$\times$40 grid sweep is run after CMA-ES to provide a uniform landscape view of the full threshold space for diagnostic purposes.

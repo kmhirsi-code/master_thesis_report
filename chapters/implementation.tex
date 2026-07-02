@@ -8,10 +8,113 @@ This chapter describes the software and hardware implementation of the system de
 The user-facing layer is built within GSense, providing the orchestration dashboard, recording states, and test minigames. Telemetry ingestion is managed primarily by GXT-Devio via HIDPP and seamlessly synchronized by the Nightfall background service. This layered composition ensures that 1\,kHz hardware polling runs safely out-of-process, leaving the GSense frontend free to organize workflows without stalling the main analytical execution arrays.
 
 \section{Machine Learning Backend}
-The machine learning pipeline is encapsulated in a dedicated Python intent-detection backend. During preprocessing, SciPy-based MAKIMA interpolation and statistical variance filtering are executed to sanitize and score the 1\,kHz stream entropy. The Random Forest classifier relies heavily on scikit-learn logic, converting the sliding windows of distance/velocity probes into flattened tabular feature arrays. Experimental sequence-level architectures, specifically the FDCN approaches, are developed using PyTorch.
+\label{sec:ml_backend}
+
+The machine learning pipeline is encapsulated in a dedicated Python intent-detection backend built with scikit-learn, LightGBM, and PyTorch.
+
+\subsection{Loading and Frame Extraction}
+Each recording file is paired with a JSON label sidecar validated at load time. The 120-level analog depth stream is normalised to $[0,1]$ by dividing by 120, and binary digital press signals are cast to \{0.0, 1.0\}. Only segments annotated as \texttt{source=manual} are ingested; algorithmically generated segments are discarded. Each manually annotated click segment maps to three frame-level classes: Make Onset, Click Hold, and Break Onset. Onset zones extend up to $\pm 8$ frames from each boundary marker to absorb annotation imprecision, but are clamped to at most one-third of the segment length and against adjacent segment boundaries to prevent cross-segment label contamination. A mtime-keyed in-memory cache prevents redundant re-parsing of unchanged files.
+
+\subsection{Preprocessing and Signal Augmentation}
+The analog channels optionally receive temporal smoothing (moving average, Gaussian, Savitzky-Golay, median, or EMA). Kinematic derivative channels---velocity, acceleration, jerk, and their absolute-value variants---are computed via zero-phase Akima-spline upsampling (2$\times$) followed by centered finite differences and downsampling, eliminating causal shift. A resting-drift channel is derived as the difference of a fast EMA ($\tau \approx 20$\,ms) and a slow EMA ($\tau \approx 200$\,ms), both applied zero-phase. Continuous channels are optionally decimated using an 8th-order zero-phase Chebyshev IIR low-pass filter before striding; discrete digital channels are strided only. A rolling-window activity mask (window 25 frames, amplitude threshold 0.02, variance threshold $10^{-4}$) trims inactive interior gaps longer than 500 frames while retaining 50-frame margins on each side and all labeled frames, splitting the recording into independent sub-sequences.
+
+\subsection{Splitting, Normalization, and Sample Weighting}
+Sub-sequences are partitioned into train, validation, and test at the sequence level. The preferred strategy is participant-level k-fold cross-validation: sequences are grouped by \texttt{user\_id} (extracted from the file path via \texttt{p\textbackslash d+} regex), each fold holds out exactly one participant group, and sequences without a \texttt{user\_id} always go to training. Z-score normalization is fitted on the training partition only. For kinematic channels (velocity, acceleration, jerk, drift) the standard deviation is computed over non-background frames exclusively to prevent the background mass from compressing the feature scale. Binary digital and constant per-recording configuration channels are excluded from normalization.
+
+Click-balanced per-frame sample weights equalize participant contributions. For participant $u$ with $C_u$ click events and $b_u$ background frames, the weight of a frame belonging to click event $e$ spanning $|F_e|$ frames is $(1/C_u)/|F_e|$, and the weight of a background frame is $1/b_u$. Weights are then rescaled per class to preserve the click/background mass ratio, and capped at a maximum ratio of 10 via iterative convergence. The Random Forest additionally applies inverse-frequency class weights scaled by configurable per-class multipliers, providing an independent knob for the cost of each misclassification type.
+
+\subsection{Feature Extraction and Model Ingestion}
+For the Random Forest and Gradient Boosted Trees, sliding-window feature extraction produces one tabular vector per frame. Each window spans 33 frames ($\pm 16$ around the centre frame, padded by edge-repetition at boundaries) and computes seven per-channel features by default: window mean, first-to-last slope, peak, velocity at the centre frame, time-to-peak, minimum, and time-to-trough. Five cross-channel features are always appended: L/R analog correlation, its absolute value, whether the left digital signal fires during an analog rise, the same for the right, and the maximum analog value across both sides. For the base four-channel input this yields $4 \times 7 + 5 = 33$ features per frame, growing by 7 for each additional derived channel enabled. An extended 13-feature bank (adding range, zero-crossing rate, TKEO energy, kurtosis, and waveform length) is available but disabled by default. Extraction is chunked in blocks of 50{,}000 frames to bound peak memory. Optional context probes append raw or locally averaged analog samples at configurable temporal offsets (e.g.\ $\pm$50\,ms, $\pm$100\,ms).
+
+The FCN bypasses tabular extraction and receives raw $[C, T]$ tensors directly. Training labels are converted to a 3-channel heatmap: channels 0 and 1 carry Gaussian probability bumps ($\sigma$ = 8 frames) centred on each Make and Break onset frame respectively, and channel 2 carries a binary hold mask. A focal binary cross-entropy loss is applied per channel per frame, with per-frame sample weights scaling the loss directly. When sequence-window training is used, an 8-frame zero-weight gap is inserted between recordings in the concatenated hypersequence so no sliding window can span a boundary.
 
 \section{Optimization Pipeline Integration}
-The optimization phase bridges the machine learning framework back into direct hardware behavior suggestions. The CMA-ES simulation implements custom finite state machine logic algorithmically mirroring the precise internal trigger mechanisms for the PRO X2 Superstrike. The frontend integration directly extracts the optimizer's outputs to satisfy critical user-sentiment constraints observed during testing: displaying the resultant AP and RT adjustments not as a simple black-box recommendation, but as graph-supported "educated guesses" illustrating the explicit Recall/Precision tradeoff improvements.
+\label{sec:optimizer_impl}
+
+The parameter optimizer is implemented as a standalone Rust service that communicates with the front-end client via named-pipe IPC. It receives the preprocessed analog depth signal and the ground-truth click regions from the ML manager, runs the CMA-ES sweep, and returns the Pareto frontier and full landscape grid as a JSON sidecar.
+
+The core of the service is a frame-accurate simulation of the two hardware trigger modes, illustrated in Figures~\ref{fig:fsm_nort} and~\ref{fig:fsm_rt}. In the \textbf{simple threshold} mode (Figure~\ref{fig:fsm_nort}), actuation is a two-state machine: the button transitions to the pressed state when analog depth exceeds the make threshold and returns to idle when it drops back below. In \textbf{Rapid Trigger} mode (Figure~\ref{fig:fsm_rt}), the FSM is extended to five states. Once pressed, the button releases as soon as depth drops by the RT sensitivity below the last observed peak. From the RT-released state the button can re-actuate when depth rises above the last trough by the RT sensitivity, or fully reset to idle when depth returns to zero. These transition rules mirror the device firmware exactly, including the absence of a haptic blind window in the current hardware revision.
+
+\begin{figure*}[htbp]
+\centering
+\begin{tikzpicture}[
+  font=\small\sffamily,
+  st/.style={circle, draw=black!40, line width=0.7pt, minimum size=1.3cm, align=center, font=\small\bfseries\sffamily},
+  sBG/.style={st, fill=gray!45, text=black},
+  sMk/.style={st, fill=red!65, text=white},
+  sHo/.style={st, fill=blue!55, text=white},
+  sBr/.style={st, fill=green!55!black!80, text=white},
+  arr/.style={-{Stealth[length=2.5mm,width=1.5mm]}, thick, black!70},
+  lbl/.style={font=\scriptsize\sffamily, fill=white, inner sep=1.5pt, text=black!65}
+]
+\node[sBG] (bg)   at (0,0)   {BG};
+\node[sMk] (make) at (3.2,0) {MAKE};
+\node[sHo] (hold) at (6.4,0) {HOLD};
+\node[sBr] (brk)  at (9.6,0) {BREAK};
+
+\draw[arr] (-1.2,0) -- (bg);
+\draw[arr] (bg)   -- node[lbl,above]{$a > \theta_{\text{make}}$} (make);
+\draw[arr] (make) -- (hold);
+\draw[arr] (hold) -- node[lbl,above]{$a < \theta_{\text{make}}$} (brk);
+\draw[arr] (brk.south) to[out=-40,in=-140,looseness=0.4] (bg.south);
+
+\node[font=\scriptsize\itshape,text=black!55] at (4.8,-1.85)
+  {$^*a$ = analog depth value at frame $t$};
+\end{tikzpicture}
+\caption{Simple threshold (no Rapid Trigger) FSM. A Make event fires when depth crosses above $\theta_{\text{make}}$; a Break event fires when depth falls back below the same threshold. The four states correspond directly to the four classifier output classes.}
+\label{fig:fsm_nort}
+\end{figure*}
+
+\begin{figure*}[htbp]
+\centering
+\begin{tikzpicture}[
+  font=\small\sffamily,
+  st/.style={circle, draw=black!40, line width=0.7pt, minimum size=1.3cm, align=center, font=\small\bfseries\sffamily},
+  sBG/.style={st, fill=gray!45, text=black},
+  sMk/.style={st, fill=red!65, text=white},
+  sHo/.style={st, fill=blue!55, text=white},
+  sBrRT/.style={st, fill=green!55!black!80, text=white},
+  sBGRT/.style={st, fill=gray!35, text=black},
+  sMkRT/.style={st, fill=red!50, text=white},
+  arr/.style={-{Stealth[length=2.5mm,width=1.5mm]}, thick, black!70},
+  lbl/.style={font=\scriptsize\sffamily, fill=white, inner sep=1.5pt, text=black!65}
+]
+% Top row
+\node[sBG]    (bg)    at (0,0)      {BG};
+\node[sMk]    (make)  at (3,0)      {MAKE};
+\node[sHo]    (hold)  at (6.2,0)    {HOLD};
+\node[sBrRT]  (brkrt) at (10,0)     {\small BREAK\\[-3pt]\scriptsize(RT)};
+% Bottom row
+\node[sBGRT]  (bgrt)  at (10,-3.0)  {\small BG\\[-3pt]\scriptsize(RT)};
+\node[sMkRT]  (mkrt)  at (6.2,-1.95) {\small MAKE\\[-3pt]\scriptsize(RT)};
+
+% Initial arrow
+\draw[arr] (-1.2,0) -- (bg);
+
+% Top transitions
+\draw[arr] (bg)   -- node[lbl,above]{$a > \theta_{\text{make}}$} (make);
+\draw[arr] (make) -- (hold);
+\draw[arr] (hold) -- node[lbl,above,align=center]
+  {$a < \theta_{\text{make}}$\\$a < \mathrm{peak} - \mathrm{RT}$} (brkrt);
+
+% Vertical: BREAK(RT) → BG(RT)
+\draw[arr] (brkrt) -- node[lbl,right]{$a = 0$} (bgrt);
+
+% Bottom: BG(RT) → MAKE(RT)
+\draw[arr] (bgrt) -- node[lbl,below]{$a > \mathrm{trough} + \mathrm{RT}$} (mkrt.east);
+
+% MAKE(RT) → HOLD
+\draw[arr] (mkrt) -- (hold);
+
+% BG(RT) full reset → BG
+\draw[arr] (bgrt.west) to[out=180,in=-90,looseness=0.55] (bg.south);
+
+\node[font=\scriptsize\itshape,text=black!55] at (5,-3.65)
+  {$^*a$ = analog depth value at frame $t$};
+\end{tikzpicture}
+\caption{Rapid Trigger (RT) FSM. Once pressed, the button releases when depth drops by the RT sensitivity below the last observed peak. From the RT-released state the button re-actuates when depth rises above the last trough by the RT sensitivity, producing another Make onset; it fully resets to idle when depth returns to zero.}
+\label{fig:fsm_rt}
+\end{figure*}
 
 \section{Data Acquisition Campaign}
 \label{sec:data_acquisition}

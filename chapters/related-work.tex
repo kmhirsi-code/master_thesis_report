@@ -33,11 +33,5 @@ The OfflineFCN architecture adapts the dilated causal convolution structure intr
 
 The OfflineFCN departs from WaveNet in one critical dimension: it uses symmetric (non-causal) padding rather than causal (left-only) padding. This doubles the effective receptive field per layer for the same kernel size, since context is drawn from both directions---enabling the $\pm$1530\,ms receptive field described in Section~\ref{sec:modeling} to be achieved with only 8 blocks. The trade-off is that the resulting model cannot be deployed for streaming inference, since each output depends on future samples. This is appropriate for the offline analysis mode but excludes the model from the on-device path described as future work.
 
-\section{Transformer Decoders for Temporal Event Prediction}
-
-Recent sequence models increasingly frame boundary detection as an event-set prediction problem rather than strictly per-frame labeling. Transformer decoders with learned queries have shown that global context and query interaction can model sparse event structure without hand-crafted transition constraints. In this framing, each query predicts an event hypothesis and confidence, and training resolves assignment via bipartite matching so duplicate detections are penalized directly.
-
-For click-intent segmentation, this perspective is relevant because make/break boundaries are sparse relative to background frames and are naturally interpreted as events on a timeline. A DETR-style decoder~\cite{carion2020detr} on top of a high-context temporal backbone can therefore replace rule-based post-processing or transition-constrained decoders with a single learned event predictor. The trade-off is computational: query-based decoding is heavier than shallow per-frame classifiers and demands stronger regularization on small per-user datasets.
-
 
 %%%%%%%%%%%%%%%%%%%%
