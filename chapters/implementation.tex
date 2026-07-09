@@ -31,9 +31,38 @@ The FCN bypasses tabular extraction and receives raw $[C, T]$ tensors directly. 
 \section{Optimization Pipeline Integration}
 \label{sec:optimizer_impl}
 
-The parameter optimizer is implemented as a standalone Rust service that communicates with the front-end client via named-pipe IPC. It receives the preprocessed analog depth signal and the ground-truth click regions from the ML manager, runs the CMA-ES sweep, and returns the Pareto frontier and full landscape grid as a JSON sidecar.
+The parameter optimizer is implemented as a standalone Rust service that communicates with the front-end client via named-pipe IPC. It receives preprocessed analog signals and labeled click regions from the ML manager, performs an exhaustive discrete search over candidate thresholds, and returns both best-solution and analysis artifacts as JSON outputs.
 
-The core of the service is a frame-accurate simulation of the two hardware trigger modes, illustrated in Figures~\ref{fig:fsm_nort} and~\ref{fig:fsm_rt}. In the \textbf{simple threshold} mode (Figure~\ref{fig:fsm_nort}), actuation is a two-state machine: the button transitions to the pressed state when analog depth exceeds the make threshold and returns to idle when it drops back below. In \textbf{Rapid Trigger} mode (Figure~\ref{fig:fsm_rt}), the FSM is extended to five states. Once pressed, the button releases as soon as depth drops by the RT sensitivity below the last observed peak. From the RT-released state the button can re-actuate when depth rises above the last trough by the RT sensitivity, or fully reset to idle when depth returns to zero. These transition rules mirror the device firmware exactly, including the absence of a haptic blind window in the current hardware revision.
+The core of the service is a frame-accurate simulation of firmware trigger logic, illustrated in Figures~\ref{fig:fsm_nort} and~\ref{fig:fsm_rt}. The deployed optimization path uses depth for both make and break channels, with candidate thresholds $(T_m, T_r)$ where $T_m$ is Actuation Point and $T_r$ is Rapid Trigger sensitivity. In this path, the simulator runs a 3-state FSM (Idle $\rightarrow$ Pressed $\rightarrow$ RT-Released):
+
+\begin{itemize}
+  \item Idle $\rightarrow$ Pressed if $m_i \ge T_m$ (emit make, initialize running peak),
+  \item Pressed $\rightarrow$ RT-Released if $b_i \le \mathrm{peak} - T_r$ (emit break, initialize running valley),
+  \item RT-Released $\rightarrow$ Pressed if $b_i \ge \mathrm{valley} + T_r$ (emit make),
+  \item RT-Released $\rightarrow$ Idle only when the signal returns to zero ($b_i \le 0$ or $\mathrm{valley} \le 0$), matching firmware reset behavior.
+\end{itemize}
+
+For non-depth break features, the backend also supports a simple 2-state threshold mode with candidate $(T_m, T_b)$:
+
+\begin{itemize}
+  \item unpressed $\rightarrow$ pressed when $m_i \ge T_m$,
+  \item pressed $\rightarrow$ unpressed when $b_i \le T_b$.
+\end{itemize}
+
+Signals are quantized before evaluation so search remains firmware-faithful and efficient. In the deployed depth-depth path, thresholds are evaluated exhaustively over the exposed 10-level depth grid.
+
+For each threshold candidate, simulated intervals are aligned to labels using overlap-constrained monotonic matching. The service computes timing and detection metrics (matched, missed, false positives, make-early, break-early, and latency summaries), evaluates the objective described in Section~\ref{sec:optimizer}, and stores per-candidate simulated intervals and aggregate statistics.
+
+Output artifacts include:
+
+\begin{itemize}
+  \item the complete set of evaluated candidates,
+  \item the minimum-loss solution,
+  \item a Pareto frontier over \{error rate, average click distance\},
+  \item landscape data for visualization.
+\end{itemize}
+
+For landscape visualization, the deployed depth-depth path emits its exhaustive evaluated grid directly (10$\times$10). Generalized feature-pair paths emit a fixed 40$\times$40 binned grid, with unvisited cells marked by sentinel loss values.
 
 \begin{figure*}[htbp]
 \centering

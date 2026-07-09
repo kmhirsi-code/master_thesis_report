@@ -156,22 +156,71 @@ Given a set of elected Make onset frames and Break onset frames, a final matchin
 \section{Parameter Optimization}
 \label{sec:optimizer}
 
-Once click-intent boundaries are extracted, the system searches for the hardware threshold pair (Actuation Point, Rapid Trigger sensitivity) that best reproduces those boundaries in firmware.
+After click-intent boundaries are extracted, the optimizer estimates the hardware threshold pair that best reproduces those boundaries under firmware-faithful trigger simulation.
 
 \subsection{Firmware State Machine Simulation}
-The optimizer embeds a frame-accurate simulation of the two firmware trigger modes. The \textbf{simple threshold} mode is a 2-state machine: a press is registered when the analog depth signal crosses the make threshold upward, and released when it crosses the break threshold downward. The \textbf{Rapid Trigger} mode is a 3-state machine (Idle $\to$ Pressed $\to$ RT-Released) that tracks rolling peaks and valleys: once pressed, the button releases when depth drops by more than the RT sensitivity below the last peak; from the released state, it re-actuates when depth rises by more than the sensitivity above the last valley, and fully resets to Idle only when the signal returns to zero. Both modes mirror the exact transition rules in the device firmware, validated against hardware-logged event timestamps. The full state transition diagrams for both modes are given in Figures~\ref{fig:fsm_nort} and~\ref{fig:fsm_rt} in Chapter~\ref{chap:implementation}.
+Each candidate threshold pair is evaluated with a frame-accurate simulation of firmware trigger logic.
+
+In \textbf{simple-threshold mode}, the simulator is a 2-state machine: press is emitted when the make signal crosses the make threshold upward, and release is emitted when the break signal crosses the break threshold downward.
+
+In \textbf{Rapid Trigger mode}, the simulator is a 3-state machine (Idle $\to$ Pressed $\to$ RT-Released) with rolling extrema. After actuation, release is emitted when depth falls by at least RT sensitivity below the running peak. From RT-Released, re-actuation occurs when depth rises by at least RT sensitivity above the running valley. The state resets to Idle only when the signal returns to zero, matching firmware reset semantics.
+
+To preserve firmware behavior while keeping search efficient, signals are quantized before evaluation and searched on a discrete, hardware-relevant threshold grid.
 
 \subsection{Search Space and Objective}
-The search space is two-dimensional: make threshold and break threshold, each drawn from 20 discrete depth levels (0--120 in steps of 6, matching the firmware's integer representation). CMA-ES is chosen over grid search for two reasons. First, the optimal make and break thresholds are correlated---a higher actuation point typically permits a proportionally larger RT sensitivity---so a method that adapts the full covariance matrix between the two parameters converges significantly faster than diagonal-step methods. Second, the firmware FSM is cheap to evaluate (microseconds per recording), so the $O(n^2)$ CMA-ES convergence budget is a practical constraint on search iterations rather than compute time.
+Optimization is discrete and exhaustive over the candidate threshold grid, yielding deterministic and reproducible solutions at exposed hardware resolution.
 
-Each candidate threshold pair is scored by a unified scalar loss:
+For each candidate, simulated click intervals are matched to labeled intervals using \textbf{overlap-constrained monotonic matching}. A label is matched only if at least one simulated interval overlaps that label interval. If multiple simulated intervals overlap the same label (oscillation/chatter), they are collapsed into one canonical matched interval using earliest make and latest break.
+
+Let
+\[
+\begin{array}{rcl}
+N  & = & \text{number of labeled clicks},\\
+TP & = & \text{number of matched labels},\\
+FN & = & N-TP,\\
+FP & = & \text{number of unmatched simulated intervals}.
+\end{array}
+\]
+
+For matched pair $i$, define make and break boundary errors:
 \[
 \begin{aligned}
-  \mathcal{L} ={}& \bar{d}_{\text{latency}} + w_{\text{miss}} \cdot N_{\text{miss}} + w_{\text{fp}} \cdot N_{\text{fp}} \\
-  & {}+ w_{\text{early}} \cdot (N_{\text{make\_err}} + N_{\text{break\_err}})
+e_i^{(m)} &= t_{i,\mathrm{sim}}^{(m)} - t_{i,\mathrm{label}}^{(m)},\\
+e_i^{(b)} &= t_{i,\mathrm{sim}}^{(b)} - t_{i,\mathrm{label}}^{(b)}.
 \end{aligned}
 \]
-where $\bar{d}_{\text{latency}}$ is the average temporal distance between each simulated trigger and its matched ground-truth intent boundary, $N_{\text{miss}}$ counts undetected real clicks, $N_{\text{fp}}$ counts phantom clicks, and $N_{\text{make\_err}} + N_{\text{break\_err}}$ penalises timing errors at boundaries. The penalty weights $(w_{\text{miss}}, w_{\text{fp}}, w_{\text{early}})$ are configurable and allow the user to express preferences (e.g.\ prioritise recall over precision for a competitive FPS player).
+
+Early errors are asymmetrically penalized with multiplier $\kappa \ge 1$:
+\[
+\phi_\kappa(e)=|e|\left(1+(\kappa-1)\mathbf{1}[e<0]\right).
+\]
+
+Per-match timing distance is
+\[
+d_i = w_{\mathrm{make}}\,\phi_\kappa\!\left(e_i^{(m)}\right)
++ \left(1-w_{\mathrm{make}}\right)\phi_\kappa\!\left(e_i^{(b)}\right),
+\]
+where $w_{\mathrm{make}} \in [0,1]$ controls make-vs-break priority.
+
+Detection penalties are parameterized by base ms-equivalent detection cost $c_{\mathrm{det}}$ and recall/precision bias $\beta$:
+\[
+c_{\mathrm{miss}} = c_{\mathrm{det}}e^{\beta},\qquad
+c_{\mathrm{fp}} = c_{\mathrm{det}}e^{-\beta}.
+\]
+
+The final loss is
+\[
+\mathcal{L}=
+\begin{cases}
+\infty, & TP=0,\\[4pt]
+\displaystyle \frac{1}{TP}\sum_{i=1}^{TP} d_i
++ \frac{c_{\mathrm{miss}}FN + c_{\mathrm{fp}}FP}{N}, & TP>0.
+\end{cases}
+\]
+
+This yields interpretable controls: $w_{\mathrm{make}}$ sets make-vs-break timing emphasis, $\kappa$ controls early-click severity, and $(c_{\mathrm{det}},\beta)$ control overall detection strictness and recall-precision preference.
 
 \subsection{Pareto Frontier and Output}
-The optimizer is run independently for each candidate feature combination (different preprocessing signals can serve as the make or break detection input). After convergence, a Pareto frontier over \{error rate, average latency\} is computed and returned to the front-end client for visualization. The user inspects the trade-off curve and selects a Pareto-optimal configuration, rather than receiving a single black-box recommendation. A complementary 40$\times$40 grid sweep is run after CMA-ES to provide a uniform landscape view of the full threshold space for diagnostic purposes.
+For each feature-pair configuration, the optimizer returns all evaluated candidates, the minimum-loss operating point, and a Pareto frontier over \{error rate, average click distance\} for interactive inspection.
+
+Detailed serialization choices (grid layout, sentinels, and per-combination diagnostics) are implementation concerns and are described in Section~\ref{sec:optimizer_impl}.
