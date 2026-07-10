@@ -15,6 +15,10 @@
 \usepackage{amsmath}
 \usepackage{booktabs}
 \usepackage{dblfloatfix}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{fillbetween}
+\usetikzlibrary{fillbetween}
 \usepackage{placeins}
 \usepackage{tikz}
 \usepackage{ragged2e}
@@ -92,6 +96,7 @@ Analog peripherals with continuous depth-sensing hardware offer sub-millimetre a
 
 \input{chapters/implementation}
 
+\FloatBarrier
 \input{chapters/evaluation}
 
 \input{chapters/conclusion}

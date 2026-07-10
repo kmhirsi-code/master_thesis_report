@@ -2,55 +2,693 @@
 \label{chap:eval}
 %%%%%%%%%%%%%%%%%%%%
 
-This chapter evaluates the performance of the machine learning classifiers and the downstream hardware parameter optimizer. 
+%% ── Helper commands for missing-data markers ──────────────────────────────
+\newcommand{\miss}[1]{%
+  \colorbox{yellow!80}{\small\textbf{\color{red!60!black}[?\ #1]}}}
+\newcommand{\missblock}[1]{%
+  \vspace{6pt}%
+  \noindent\colorbox{yellow!70}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{%
+    \vspace{3pt}\small\textbf{\color{red!60!black}DATA NEEDED:}\enspace #1\vspace{3pt}}}%
+  \vspace{6pt}}
+%% ─────────────────────────────────────────────────────────────────────────
+%% ─────────────────────────────────────────────────────────────────────────
 
-\section{Evaluation Setup}
+This chapter evaluates the three subsystems introduced in
+Chapter~\ref{chap:implementation}: the frame-level click-intent classifier, the
+classification-to-segmentation pipeline, and the firmware threshold optimizer. For
+each subsystem we define the evaluation protocol, report quantitative results on a
+held-out test set, and compare against appropriate baselines.
 
-\subsection{Metrics}
-The segmenting classifier's quality is primarily measured via per-class classification accuracy alongside the absolute temporal detection error, expressed as the average millisecond divergence from the ground truth intention timestamp. 
-The parameter optimizer is evaluated on its success in minimizing the simulation's tripartite loss: maintaining peak precision and recall whilst simultaneously minimizing latency.
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experimental Setup}
+\label{sec:eval-setup}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Dataset and Splits}
+All experiments use the curated corpus described in Section~\ref{sec:data_acquisition}:
+132 annotated recordings from 39 participants, yielding approximately 12,556,000 frames
+at 1\,kHz.  Separate models are trained for the left (L) and right (R) button channels,
+reflecting the large asymmetry in click volume (39,088 left-button cycles versus 6,645
+right-button cycles).  For each channel the data is split at the participant level into
+training (10,794,087 frames, L channel), validation (789,538 frames), and held-out test
+(972,663 frames) partitions.  No participant's recordings appear in more than one
+partition.  Generalization is assessed with 5-fold leave-one-participant-out (LOPO)
+cross-validation on the training and validation pool; the test set is evaluated exactly
+once per model after all hyperparameter selection is complete.
 
 \subsection{Baselines}
-The optimizer evaluates hardware configuration changes linearly against the fixed threshold baselines (e.g., default firmware behaviour). The underlying detection engine evaluates success compared to raw heuristics mapping logic.
-
-\section{Click-Intent Classifier Results}
-Tasked with interpreting the analog stream, the Random Forest model driven by "distant context probes" achieved extraordinary performance levels. It successfully attained 97\% segmentation accuracy on distinguishing genuine play intent from background data. Furthermore, the model provided extremely tight temporal bounding, showing merely a 7\,ms average detection error on labeling constraints.
-
-\section{Ablation Studies}
-
-\subsection{Variance Entropy Scoring}
-Considering that 80--90\% of raw game session data operates purely as noisy background idleness, attempting to run models without first applying the variance-based entropy score trimming produces severe data imbalance, crippling model convergence and execution speeds.
-
-\subsection{Contextual Probes}
-Ablating the "distant context probes" verifies that analyzing isolated instant frames limits classification to naive static thresholding. Including pre- and post-frame analytical slices serves to contextualize the momentum of a single finger, allowing 97\% classification precision.
-
-\section{Parameter Optimizer Results}
-The CMA-ES optimizer effectively simulated the hardware switch logic, validating the system's ability to hunt specific hardware tolerances to uniquely match physical telemetry. It successfully discovers configurations that improve objective measures by collapsing latency gaps within the parameters of strong recall and precision.
-
-\section{End-to-End User Validation Protocol (Project ARROW)}
-To close the loop from theoretical model accuracy to practical HCI outcomes, a structured end-to-end user validation protocol (Project ARROW) is designed. This evaluation assesses the subjective trust users place in the calibration recommendations and quantifies objective performance changes during actual gameplay. 
-
-\subsection{Study Objectives}
-The user validation protocol operates on three primary objectives:
-\begin{enumerate}
-    \item \textbf{Subjective Trust \& Perception:} Assessing users' willingness to trust an autonomous calibration tool and accept its recommendation, specifically tracking feedback regarding how the "intent proficiency score" and recommendation UI are interpreted.
-    \item \textbf{Objective Performance (Zapper Trajectory):} Utilizing a custom standalone aiming minigame (Zapper) to analyze "stop-to-click" latency. A measurable reduction in this mechanical threshold latency verifies the optimizer's effectiveness over human-adjusted defaults.
-    \item \textbf{Misclick Monitoring (Performance Loss):} Actively logging any catastrophic regressions, explicitly tracking if a recommended configuration leads to unintended inputs or if the user actively rejects the calibration due to lack of trust.
-\end{enumerate}
-(Placebo testing was intentionally excluded from the scope due to participant sample size limitations).
-
-\subsection{Protocol Structure}
-The 60-minute evaluation protocol is divided into four distinct phases:
 \begin{itemize}
-    \item \textbf{Phase 1: Pre-Session Onboarding (0--5 mins).} Users define their base ergonomic settings (DPI). The mouse is strictly reset to a conservative standard configuration baseline. Initial "out-of-the-box" impressions are recorded and a participant ID is assigned.
-    \item \textbf{Phase 2: Baseline Calibration (5--20 mins).} Utilizing a think-aloud protocol, users engage with the initial calibration wizard and play for 10--15 minutes while telemetry is recorded. This phase concludes with a 1-minute baseline performance round in the Zapper minigame.
-    \item \textbf{Phase 3: Post-Optimization UX (20--40 mins).} Users review the UI presenting the optimization recommendation. If a user rejects the algorithm's configuration due to a lack of trust, it is recorded as a critical UX failure alongside their justification. Users then apply the optimization and play a secondary session, culminating in a final 1-minute Zapper performance test to capture delta-latency improvements.
-    \item \textbf{Phase 4: Offboarding \& Validation (50--60 mins).} Technical verification ensures the GSense tracking history is correctly encapsulated for the specific participant ID, followed by final qualitative user surveying and debriefing. 
+  \item \textbf{Majority-class baseline.} Assigns every frame the Background label.
+    Provides the floor under severe class imbalance.
+  \item \textbf{Heuristic bootstrap.} The OS-event-anchored walk-back detector described
+    in Section~\ref{sec:labeling}, evaluated as a segmentor on the test set.
+    Represents the pre-model ceiling achievable without a learned component.
+  \item \textbf{Static default firmware configuration.} Actuation Point at level 5/10
+    (mid-travel), Rapid Trigger disabled. Serves as the optimizer comparison point.
 \end{itemize}
 
-\section{Discussion}
-\subsection{Strengths}
-The solution successfully operationalizes continuous hardware capability with machine learning inference, addressing the known difficulty of correctly tuning analog actuation devices manually. Identifying 1\,kHz intent with 7\,ms precision empowers the system to drastically override default performance blocks efficiently.
+\subsection{Metrics}
+\paragraph{Detection and segmentation.}
+A predicted click interval is counted as a true positive (TP) when it overlaps a
+ground-truth interval by at least 50\,\% of the longer interval (the same
+overlap-constrained monotonic matching used by the optimizer).  \emph{Deployment F1}
+is the harmonic mean of click-level precision and recall.  \emph{Mean IoU} is the
+average Jaccard index over matched pairs.
 
-\subsection{User Trust and Adoption Roadblocks}
-User evaluation provided a stark insight into adoption: users categorically distrust entirely autonomous hardware modification engines acting as black boxes. For production scale viability (such as integration into GHub and GHabits platforms), visual performance validations alongside objective data transparency (graphs outlining the recommended change) are structurally essential to foster adoption.
+\paragraph{Boundary timing.}
+For each matched pair we compute the signed make-boundary error $e^{(m)}$ and
+break-boundary error $e^{(b)}$ in milliseconds (positive = late, negative = early).
+We report the mean bias and the absolute spread (mean absolute deviation) per boundary.
+
+\paragraph{Cross-validation.}
+For the two tree-based architectures (Random Forest and GBT), 5-fold LOPO deployment
+F1 is reported as mean $\pm$ standard deviation.  The FCN was too computationally
+expensive for repeated LOPO retraining; its generalization is assessed on the single
+held-out test set only.
+
+\paragraph{Hardware.}
+All timings are measured on an AMD Ryzen~9 7900X (12-core, 4.7\,GHz), 16\,GB RAM,
+no GPU.  The FCN uses PyTorch CPU inference for fair comparison; a GPU would
+substantially accelerate training.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Classification and Segmentation Results}
+\label{sec:eval-results}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Deployment Performance on the Test Set}
+Table~\ref{tab:deployment} reports click-level detection and boundary timing for all
+six release-candidate models on the held-out test set.  The Random Forest (L channel)
+achieves the highest deployment F1 of 96.7\,\%, consistent with its design-chapter
+positioning as the primary production architecture.
+
+\begin{table*}[htbp]
+\centering
+\small
+\caption{Click-level deployment metrics on the held-out test set.
+Best value in each column is \textbf{bolded}.
+Boundary timing details are shown in Figure~\ref{fig:latency}.
+The heuristic uses the OS-event walk-back for Make and the first velocity
+zero-crossing for Break; its IoU on matched clicks exceeds the best model
+because its duration estimate is accurate when anchored on a true OS event,
+but it misses the majority of clicks that were not registered by the firmware.}
+\label{tab:deployment}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{llcccc}
+\hline
+\textbf{Model} & \textbf{Ch.} & \textbf{F1} & \textbf{P} & \textbf{R} & \textbf{IoU} \\
+\hline
+Heuristic      & L & 0.373 & 0.365 & 0.381 & \textbf{0.916} \\
+Heuristic      & R & 0.118 & 0.113 & 0.123 & 0.899 \\
+\hline
+Random Forest  & L & \textbf{0.967} & \textbf{0.971} & 0.963 & 0.912 \\
+Random Forest  & R & 0.925 & 0.947 & 0.904 & 0.897 \\
+GBT            & L & 0.947 & 0.941 & \textbf{0.952} & 0.902 \\
+GBT            & R & 0.925 & 0.926 & 0.923 & \textbf{0.917} \\
+FCN            & L & 0.945 & 0.946 & 0.945 & 0.906 \\
+FCN            & R & 0.813 & 0.855 & 0.774 & 0.911 \\
+\hline
+\end{tabular}
+\end{table*}
+
+\begin{figure*}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\small Make boundary}
+\begin{tikzpicture}
+\begin{axis}[
+  width=\linewidth, height=5cm,
+  ylabel={Bias (ms)},
+  xtick={1,2,3,4,5,6},
+  xticklabels={RF-L,RF-R,GBT-L,GBT-R,FCN-L,FCN-R},
+  xticklabel style={font=\tiny, rotate=30, anchor=east},
+  ymajorgrids=true, grid style={dashed,gray!30},
+  ymin=-5.5, ymax=4.5, xmin=0.5, xmax=6.5,
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  extra y ticks={0},
+  extra y tick style={grid=major, grid style={black!60, thick}},
+  legend style={at={(0.02,0.98)}, anchor=north west, font=\tiny},
+]
+\addplot[fill=green!12, draw=none, forget plot]
+  coordinates {(0.5,-2)(6.5,-2)(6.5,2)(0.5,2)} -- cycle;
+\addplot[only marks, mark=*, mark size=2.5pt,
+  mark options={fill=blue!60, draw=blue!80},
+  error bars/.cd, y dir=both, y explicit,
+  error bar style={blue!60, line width=0.9pt},
+  error mark options={rotate=90, mark size=3pt}]
+  coordinates {(1,-1.3)+-(0,2.1) (3,0.1)+-(0,2.2) (5,-0.4)+-(0,2.9)};
+\addplot[only marks, mark=square*, mark size=2.5pt,
+  mark options={fill=orange!60, draw=orange!80},
+  error bars/.cd, y dir=both, y explicit,
+  error bar style={orange!60, line width=0.9pt},
+  error mark options={rotate=90, mark size=3pt}]
+  coordinates {(2,0.6)+-(0,2.7) (4,-0.6)+-(0,2.6) (6,-0.5)+-(0,2.6)};
+\draw[gray!40, dashed, thin] (axis cs:2.5,-5.5) -- (axis cs:2.5,4.5);
+\draw[gray!40, dashed, thin] (axis cs:4.5,-5.5) -- (axis cs:4.5,4.5);
+\legend{L channel, R channel}
+\end{axis}
+\end{tikzpicture}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\small Break boundary}
+\begin{tikzpicture}
+\begin{axis}[
+  width=\linewidth, height=5cm,
+  ylabel={Bias (ms)},
+  xtick={1,2,3,4,5,6},
+  xticklabels={RF-L,RF-R,GBT-L,GBT-R,FCN-L,FCN-R},
+  xticklabel style={font=\tiny, rotate=30, anchor=east},
+  ymajorgrids=true, grid style={dashed,gray!30},
+  ymin=-5.5, ymax=4.5, xmin=0.5, xmax=6.5,
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  extra y ticks={0},
+  extra y tick style={grid=major, grid style={black!60, thick}},
+  legend style={at={(0.02,0.98)}, anchor=north west, font=\tiny},
+]
+\addplot[fill=green!12, draw=none, forget plot]
+  coordinates {(0.5,-2)(6.5,-2)(6.5,2)(0.5,2)} -- cycle;
+\addplot[only marks, mark=*, mark size=2.5pt,
+  mark options={fill=blue!60, draw=blue!80},
+  error bars/.cd, y dir=both, y explicit,
+  error bar style={blue!60, line width=0.9pt},
+  error mark options={rotate=90, mark size=3pt}]
+  coordinates {(1,-0.5)+-(0,2.5) (3,-1.0)+-(0,3.1) (5,-0.7)+-(0,3.0)};
+\addplot[only marks, mark=square*, mark size=2.5pt,
+  mark options={fill=orange!60, draw=orange!80},
+  error bars/.cd, y dir=both, y explicit,
+  error bar style={orange!60, line width=0.9pt},
+  error mark options={rotate=90, mark size=3pt}]
+  coordinates {(2,-1.2)+-(0,2.5) (4,0.9)+-(0,2.8) (6,0.1)+-(0,2.9)};
+\draw[gray!40, dashed, thin] (axis cs:2.5,-5.5) -- (axis cs:2.5,4.5);
+\draw[gray!40, dashed, thin] (axis cs:4.5,-5.5) -- (axis cs:4.5,4.5);
+\legend{L channel, R channel}
+\end{axis}
+\end{tikzpicture}
+\end{minipage}
+\caption{Make (left) and Break (right) boundary bias with absolute spread as error
+bars, for all six models. The green band marks a $\pm 2$\,ms reference tolerance.
+Positive bias = late boundary; negative = early. All models stay within
+$\pm 1.3$\,ms mean bias on both boundaries, with spread $\leq 3.1$\,ms. Dashed
+vertical lines separate the RF, GBT, and FCN model families.}
+\label{fig:latency}
+\end{figure*}
+
+All models achieve sub-2\,ms mean boundary bias, which is well within the perceptual
+threshold for click timing ($\approx$8--12\,ms).  The heuristic bootstrap achieves
+a deployment F1 of only 0.373 on the left channel: while its duration estimates are
+accurate when a click is found (IoU~0.916, exceeding the best model), it misses
+the majority of clicks entirely because it relies on OS digital events as anchors
+and cannot recover presses that the firmware did not register.  This gap --- 0.373
+vs.\ 0.967 for the RF --- directly quantifies the value of the learned pipeline.
+The FCN underperforms significantly
+on the R channel (F1 0.813 vs.\ 0.945 for L), attributable to the much smaller
+right-button training corpus (6,645 cycles vs.\ 39,088) on which a 3-second receptive
+field provides limited benefit.
+
+\begin{figure*}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar=6pt,
+  bar width=16pt,
+  ylabel={Deployment F1},
+  ymin=0.78, ymax=1.02,
+  xtick={1,2,3},
+  xticklabels={Random Forest, GBT, FCN},
+  ymajorgrids=true,
+  grid style={dashed, gray!35},
+  width=0.72\linewidth,
+  height=5.5cm,
+  legend style={at={(0.02,0.98)}, anchor=north west, font=\small},
+  enlarge x limits=0.35,
+  every axis plot/.append style={draw opacity=0.85},
+]
+\addplot[fill=blue!55, draw=blue!70]
+  coordinates {(1,0.967) (2,0.947) (3,0.945)};
+\addplot[fill=orange!65, draw=orange!80]
+  coordinates {(1,0.925) (2,0.925) (3,0.813)};
+\legend{Left channel, Right channel}
+\end{axis}
+\end{tikzpicture}
+\caption{Deployment F1 by architecture and button channel on the held-out test set.
+  The RF achieves the highest left-channel score (0.967); the FCN degrades
+  substantially on the right channel (0.813) due to the smaller right-button corpus.}
+\label{fig:deployment-f1}
+\end{figure*}
+
+\subsection{Cross-Participant Generalization (5-Fold LOPO)}
+Table~\ref{tab:cv} reports leave-one-participant-out cross-validation deployment F1
+for the two tree-based architectures.  The FCN is excluded due to training cost.
+
+\begin{table*}[htbp]
+\centering
+\small
+\caption{5-fold LOPO cross-validation deployment F1. Individual fold scores reveal
+inter-participant variability.}
+\label{tab:cv}
+\begin{tabular}{llccc}
+\hline
+\textbf{Model} & \textbf{Ch.} & \textbf{Mean F1} & \textbf{Std} & \textbf{Per-fold F1s} \\
+\hline
+Random Forest & L & 0.921 & 0.024 & [0.934, 0.949, 0.935, 0.903, 0.883] \\
+Random Forest & R & 0.857 & 0.023 & [0.866, 0.894, 0.849, 0.850, 0.824] \\
+GBT           & L & 0.921 & 0.026 & [0.928, 0.944, 0.945, 0.915, 0.873] \\
+GBT           & R & 0.849 & 0.022 & [0.860, 0.884, 0.851, 0.830, 0.822] \\
+\hline
+\end{tabular}
+\end{table*}
+
+RF and GBT achieve near-identical CV means ($0.921 \pm 0.024$ vs.\ $0.921 \pm 0.026$
+on the L channel), validating the design choice of RF as the default given its much
+faster training time. The lowest-performing fold (0.883 RF L, 0.822 GBT R) indicates
+that some participant profiles remain challenging; these likely correspond to users
+with atypically shallow or noisy click profiles.
+
+\begin{figure*}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar=2pt,
+  bar width=9pt,
+  ylabel={Deployment F1},
+  ymin=0.80, ymax=0.975,
+  xtick={1,2,3,4,5},
+  xticklabels={Fold 1, Fold 2, Fold 3, Fold 4, Fold 5},
+  ymajorgrids=true,
+  grid style={dashed, gray!35},
+  width=0.88\linewidth,
+  height=5.5cm,
+  legend style={at={(0.02,0.98)}, anchor=north west, font=\small},
+  legend columns=2,
+  enlarge x limits=0.12,
+]
+\addplot[fill=blue!60, draw=blue!75]
+  coordinates {(1,0.934)(2,0.949)(3,0.935)(4,0.903)(5,0.883)};
+\addplot[fill=blue!20, draw=blue!40]
+  coordinates {(1,0.866)(2,0.894)(3,0.849)(4,0.850)(5,0.824)};
+\addplot[fill=orange!65, draw=orange!80]
+  coordinates {(1,0.928)(2,0.944)(3,0.945)(4,0.915)(5,0.873)};
+\addplot[fill=orange!25, draw=orange!50]
+  coordinates {(1,0.860)(2,0.884)(3,0.851)(4,0.830)(5,0.822)};
+\legend{RF-L, RF-R, GBT-L, GBT-R}
+\end{axis}
+\end{tikzpicture}
+\caption{Per-fold LOPO deployment F1 for the four tree-based model variants.
+  Fold~5 is consistently the lowest across all models, suggesting the held-out
+  participant group in that fold has an atypically challenging click profile.
+  The L-channel models outperform their R-channel counterparts in every fold,
+  reflecting the larger left-button training corpus.}
+\label{fig:lopo-folds}
+\end{figure*}
+
+\subsection{Training Dynamics}
+Figure~\ref{fig:training-curves} shows per-iteration training and validation loss for
+the GBT models and per-epoch loss for the FCN models. The Random Forest is excluded
+as it is a single-pass batch learner with no iterative loss history.
+
+\begin{figure*}[htbp]
+\centering
+%% ── Row 1: GBT ────────────────────────────────────────────────────────────
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\small GBT -- Left channel}
+\begin{tikzpicture}
+\begin{axis}[
+  width=\linewidth, height=4.5cm,
+  xlabel={Boosting iteration}, ylabel={Loss},
+  ymode=log, xmin=0, xmax=1000,
+  legend style={at={(0.98,0.98)},anchor=north east,font=\tiny,
+    fill=white,fill opacity=0.85,draw opacity=1},
+  grid=major, grid style={dashed,gray!30},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  every axis plot/.append style={line width=0.8pt},
+]
+\addplot[blue!70, name path=gbtLtrain] coordinates {
+  (1,1.3097)(21,0.7449)(41,0.4923)(61,0.3609)(81,0.2882)
+  (101,0.2461)(121,0.2210)(141,0.2055)(161,0.1949)(181,0.1877)
+  (201,0.1823)(221,0.1785)(241,0.1753)(261,0.1726)(281,0.1704)
+  (301,0.1684)(321,0.1668)(341,0.1653)(361,0.1640)(381,0.1628)
+  (401,0.1616)(421,0.1605)(441,0.1595)(461,0.1586)(481,0.1576)
+  (501,0.1568)(521,0.1559)(541,0.1552)(561,0.1544)(581,0.1536)
+  (601,0.1530)(621,0.1523)(641,0.1517)(661,0.1511)(681,0.1505)
+  (701,0.1498)(721,0.1492)(741,0.1487)(761,0.1482)(781,0.1477)
+  (801,0.1473)(821,0.1468)(841,0.1464)(861,0.1460)(881,0.1455)
+  (901,0.1451)(921,0.1447)(941,0.1443)(961,0.1439)(981,0.1435)(1000,0.1432)};
+\addplot[orange!80, dashed, name path=gbtLval] coordinates {
+  (1,1.5684)(21,0.8876)(41,0.6001)(61,0.4510)(81,0.3699)
+  (101,0.3239)(121,0.2958)(141,0.2785)(161,0.2674)(181,0.2595)
+  (201,0.2538)(221,0.2505)(241,0.2474)(261,0.2452)(281,0.2437)
+  (301,0.2423)(321,0.2416)(341,0.2406)(361,0.2398)(381,0.2387)
+  (401,0.2381)(421,0.2373)(441,0.2366)(461,0.2358)(481,0.2353)
+  (501,0.2347)(521,0.2342)(541,0.2337)(561,0.2330)(581,0.2324)
+  (601,0.2319)(621,0.2318)(641,0.2311)(661,0.2309)(681,0.2304)
+  (701,0.2299)(721,0.2296)(741,0.2292)(761,0.2288)(781,0.2286)
+  (801,0.2283)(821,0.2279)(841,0.2275)(861,0.2272)(881,0.2268)
+  (901,0.2265)(921,0.2262)(941,0.2258)(961,0.2254)(981,0.2251)(1000,0.2249)};
+\addplot[orange!25, fill opacity=0.4, draw=none, forget plot]
+  fill between[of=gbtLtrain and gbtLval];
+\draw[black!40,dashed,thin] (axis cs:998,0.10) -- (axis cs:998,2.0);
+\legend{Train, Val}
+\end{axis}
+\end{tikzpicture}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\small GBT -- Right channel}
+\begin{tikzpicture}
+\begin{axis}[
+  width=\linewidth, height=4.5cm,
+  xlabel={Boosting iteration}, ylabel={Loss},
+  ymode=log, xmin=0, xmax=1000,
+  legend style={at={(0.98,0.98)},anchor=north east,font=\tiny,
+    fill=white,fill opacity=0.85,draw opacity=1},
+  grid=major, grid style={dashed,gray!30},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  every axis plot/.append style={line width=0.8pt},
+]
+\addplot[blue!70, name path=gbtRtrain] coordinates {
+  (1,1.3087)(21,0.7348)(41,0.4817)(61,0.3527)(81,0.2828)
+  (101,0.2433)(121,0.2200)(141,0.2053)(161,0.1959)(181,0.1895)
+  (201,0.1850)(221,0.1812)(241,0.1784)(261,0.1757)(281,0.1735)
+  (301,0.1716)(321,0.1698)(341,0.1679)(361,0.1664)(381,0.1647)
+  (401,0.1631)(421,0.1617)(441,0.1604)(461,0.1591)(481,0.1579)
+  (501,0.1568)(521,0.1556)(541,0.1545)(561,0.1534)(581,0.1523)
+  (601,0.1512)(621,0.1502)(641,0.1493)(661,0.1484)(681,0.1475)
+  (701,0.1466)(721,0.1458)(741,0.1450)(761,0.1442)(781,0.1433)
+  (801,0.1426)(821,0.1417)(841,0.1410)(861,0.1404)(881,0.1396)
+  (901,0.1390)(921,0.1383)(941,0.1377)(961,0.1370)(981,0.1364)(1000,0.1358)};
+\addplot[orange!80, dashed, name path=gbtRval] coordinates {
+  (1,1.5898)(21,1.0024)(41,0.7519)(61,0.6228)(81,0.5519)
+  (101,0.5119)(121,0.4857)(141,0.4699)(161,0.4610)(181,0.4531)
+  (201,0.4485)(221,0.4450)(241,0.4436)(261,0.4412)(281,0.4385)
+  (301,0.4368)(321,0.4360)(341,0.4340)(361,0.4320)(381,0.4302)
+  (401,0.4283)(421,0.4260)(441,0.4252)(461,0.4244)(481,0.4230)
+  (501,0.4214)(521,0.4205)(541,0.4187)(561,0.4176)(581,0.4171)
+  (601,0.4168)(621,0.4161)(641,0.4152)(661,0.4149)(681,0.4142)
+  (701,0.4137)(721,0.4137)(741,0.4129)(761,0.4125)(781,0.4113)
+  (801,0.4108)(821,0.4104)(841,0.4099)(861,0.4097)(881,0.4092)
+  (901,0.4086)(921,0.4082)(941,0.4068)(961,0.4066)(981,0.4061)(1000,0.4062)};
+\addplot[orange!25, fill opacity=0.4, draw=none, forget plot]
+  fill between[of=gbtRtrain and gbtRval];
+\draw[black!40,dashed,thin] (axis cs:984,0.10) -- (axis cs:984,2.0);
+\legend{Train, Val}
+\end{axis}
+\end{tikzpicture}
+\end{minipage}
+
+\vspace{4pt}
+%% ── Row 2: FCN ────────────────────────────────────────────────────────────
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\small FCN -- Left channel}
+\begin{tikzpicture}
+\begin{axis}[
+  width=\linewidth, height=4.5cm,
+  xlabel={Epoch}, ylabel={Loss},
+  xmin=0, xmax=18, ymin=0, ymax=0.125,
+  xtick={2,4,6,8,10,12,14,16},
+  legend style={at={(0.98,0.98)},anchor=north east,font=\tiny,
+    fill=white,fill opacity=0.85,draw opacity=1},
+  grid=major, grid style={dashed,gray!30},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  every axis plot/.append style={line width=0.8pt, mark size=1.2pt},
+]
+\addplot[blue!70, mark=*] coordinates {
+  (1,0.1065)(2,0.0274)(3,0.0227)(4,0.0209)(5,0.0198)
+  (6,0.0190)(7,0.0183)(8,0.0177)(9,0.0172)(10,0.0167)
+  (11,0.0163)(12,0.0159)(13,0.0156)(14,0.0152)(15,0.0149)
+  (16,0.0146)(17,0.0144)};
+\addplot[orange!80, dashed, mark=square*] coordinates {
+  (1,0.0199)(2,0.0167)(3,0.0147)(4,0.0141)(5,0.0143)
+  (6,0.0134)(7,0.0129)(8,0.0132)(9,0.0142)(10,0.0146)
+  (11,0.0150)(12,0.0149)(13,0.0157)(14,0.0155)(15,0.0169)
+  (16,0.0168)(17,0.0161)};
+\draw[black!40,dashed,thin] (axis cs:7,0) -- (axis cs:7,0.125);
+\legend{Train, Val}
+\end{axis}
+\end{tikzpicture}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\small FCN -- Right channel}
+\begin{tikzpicture}
+\begin{axis}[
+  width=\linewidth, height=4.5cm,
+  xlabel={Epoch}, ylabel={Loss},
+  xmin=0, xmax=17, ymin=0, ymax=0.28,
+  xtick={2,4,6,8,10,12,14,16},
+  legend style={at={(0.98,0.98)},anchor=north east,font=\tiny,
+    fill=white,fill opacity=0.85,draw opacity=1},
+  grid=major, grid style={dashed,gray!30},
+  tick label style={font=\tiny}, label style={font=\scriptsize},
+  every axis plot/.append style={line width=0.8pt, mark size=1.2pt},
+]
+\addplot[blue!70, mark=*] coordinates {
+  (1,0.2505)(2,0.0185)(3,0.0113)(4,0.0094)(5,0.0085)
+  (6,0.0079)(7,0.0074)(8,0.0070)(9,0.0067)(10,0.0064)
+  (11,0.0063)(12,0.0061)(13,0.0059)(14,0.0058)(15,0.0056)
+  (16,0.0055)};
+\addplot[orange!80, dashed, mark=square*] coordinates {
+  (1,0.1628)(2,0.0595)(3,0.0415)(4,0.0414)(5,0.0391)
+  (6,0.0379)(7,0.0395)(8,0.0392)(9,0.0405)(10,0.0403)
+  (11,0.0442)(12,0.0408)(13,0.0430)(14,0.0437)(15,0.0452)
+  (16,0.0443)};
+\draw[black!40,dashed,thin] (axis cs:6,0) -- (axis cs:6,0.28);
+\legend{Train, Val}
+\end{axis}
+\end{tikzpicture}
+\end{minipage}
+
+\caption{Training curves for GBT (top row, log-scale loss over 1{,}000 boosting
+iterations, sampled every 20) and FCN (bottom row, focal loss per epoch). The
+dashed vertical line marks the best-validation checkpoint: iteration 998 (GBT-L),
+984 (GBT-R), epoch 7 (FCN-L), and epoch 6 (FCN-R). The orange-shaded band
+in the GBT panels shows the generalization gap (val~$-$~train loss): the gap is
+substantially wider on the R channel than on the L channel, reflecting the harder
+right-button class distribution. In the FCN panels, the vertical dashed line
+marks the best-validation epoch; from that point onward the model is in the
+overfitting regime. The generalization gap is quantified across all models in
+Figure~\ref{fig:gen-gap}.}
+\label{fig:training-curves}
+\end{figure*}
+
+\begin{figure*}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar=3pt,
+  bar width=18pt,
+  ylabel={Accuracy generalisation gap (\%)},
+  ylabel style={align=center},
+  xtick={1,2,3},
+  xticklabels={Random Forest, GBT, FCN},
+  xticklabel style={font=\small},
+  ymajorgrids=true,
+  grid style={dashed, gray!30},
+  ymin=-9, ymax=3.5,
+  width=0.72\linewidth,
+  height=5.5cm,
+  enlarge x limits=0.3,
+  tick label style={font=\small},
+  label style={font=\small},
+  axis x line*=bottom,
+  extra y ticks={0},
+  extra y tick style={grid=major, grid style={black!60, thick}},
+  nodes near coords={\pgfmathprintnumber[fixed,precision=1,showpos]%
+    {\pgfplotspointmeta}\%},
+  nodes near coords style={font=\scriptsize},
+  legend style={at={(0.02,0.02)}, anchor=south west, font=\small},
+]
+\addplot[fill=blue!55, draw=blue!70]
+  coordinates {(1,-0.6)(2,0.5)(3,0.9)};
+\addplot[fill=orange!55, draw=orange!70]
+  coordinates {(1,-2.6)(2,-1.0)(3,-5.3)};
+\legend{Left channel, Right channel}
+\end{axis}
+\end{tikzpicture}
+\caption{Accuracy-based generalisation gap $(a_\text{train} - a_\text{test}) /
+a_\text{train} \times 100\%$ for all six models, grouped by architecture.
+A positive value means the model achieves higher accuracy on the training set
+than on the held-out test set (classic overfitting); a negative value means the
+test accuracy exceeds training accuracy (strong regularisation or an easier test
+partition). All gaps are within $\pm 6\%$, confirming that none of the
+architectures overfits severely at the accuracy level. The right-channel FCN
+shows the largest negative gap ($-5.3\%$), consistent with strong dropout
+regularisation on a small corpus. GBT and FCN left-channel models exhibit small
+positive gaps ($<1\%$), indicating marginal overfitting on the more abundant
+left-button training set.}
+\label{fig:gen-gap}
+\end{figure*}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Segmentation Configuration}
+\label{sec:eval-seg}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Optimal Thresholds and Strategies}
+Table~\ref{tab:thresholds} shows the segmentation configuration selected by the
+Bayesian sweep for each model.
+
+\begin{table*}[htbp]
+\centering
+\small
+\caption{Optimal segmentation configuration per model (Bayesian sweep on validation
+set). Make and break threshold values are Schmitt-trigger entry thresholds on the
+probability output.}
+\label{tab:thresholds}
+\begin{tabular}{llccccc}
+\hline
+\textbf{Model} & \textbf{Ch.} & \textbf{$\theta_m$} & \textbf{$\theta_b$}
+  & \textbf{Make method} & \textbf{Break method} & \textbf{Pairing} \\
+\hline
+Random Forest & L & 0.75 & 0.85 & plateau\_median & plateau\_median & first\_next \\
+Random Forest & R & 0.80 & 0.75 & peak & peak & first\_next \\
+GBT           & L & 0.90 & 0.05 & peak & plateau\_median & scored \\
+GBT           & R & 0.90 & 0.65 & peak & plateau\_median & scored \\
+FCN           & L & 0.50 & 0.50 & plateau\_median & plateau\_median & first\_next \\
+FCN           & R & 0.30 & 0.50 & peak & plateau\_median & hungarian \\
+\hline
+\end{tabular}
+\end{table*}
+
+\subsection{Pairing Strategy Comparison}
+The three pairing strategies (greedy first-next, Hungarian assignment, and trained
+logistic scorer) produce nearly identical segmentation IoU across all models and
+channels, with a maximum gap of 0.001 IoU points. Once the classifier yields
+well-calibrated probability outputs the assignment problem is largely trivial, and
+greedy first-next is selected as the default for RF and FCN~L, while the trained
+scorer is selected for GBT and Hungarian for FCN~R.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Computational Performance}
+\label{sec:eval-compute}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Table~\ref{tab:timing} reports wall-clock times for training and inference on the
+evaluation hardware (AMD Ryzen~9 7900X, 16\,GB RAM, CPU only).
+
+\begin{table*}[htbp]
+\centering
+\small
+\caption{Training and inference timing per model and channel on a consumer CPU.
+Inference throughput is reported as frames per second at 1\,kHz (1\,fps = 1\,ms
+processing per ms of telemetry). An inference rate above 1{,}000\,fps indicates
+the pipeline runs faster than real-time.}
+\label{tab:timing}
+\begin{tabular}{llrrr}
+\hline
+\textbf{Model} & \textbf{Ch.}
+  & \textbf{Feat.\ extr.\ (s)} & \textbf{Training (s)}
+  & \textbf{Inference (fps)} \\
+\hline
+Random Forest & L & 25.6 & 1{,}401 & 97{,}369 \\
+Random Forest & R &  3.7 &   141   & 38{,}139 \\
+GBT           & L &  9.6 &   494   & 58{,}108 \\
+GBT           & R &  3.9 &   161   & 57{,}284 \\
+FCN           & L &  ---  & 2{,}695 & 227{,}268 \\
+FCN           & R &  ---  &   298   & 639{,}039 \\
+\hline
+\end{tabular}
+\end{table*}
+
+RF training for the left channel (23 minutes) is dominated by the large class-balanced
+feature matrix (95 features, $\approx$10M frames).  The right-channel RF trains in
+under 3 minutes given its smaller corpus.  GBT training is faster than RF on the same
+data owing to early stopping (998 rounds for GBT-L vs.\ 110 estimators for RF-L). All
+models infer at least 38$\times$ faster than real-time, making post-session inference
+over a full 40-minute gaming session feasible within a few seconds.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Optimizer Evaluation}
+\label{sec:eval-opt}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Comparison with Static Default}
+The firmware threshold optimizer is evaluated by comparing the per-user optimal
+(AP, RT) configuration against the device's static default (AP\,=\,5/10, RT disabled)
+across all 238 channel-records from 134 sessions and 39 participants.  For each session
+and channel, the optimizer exhaustively searches the 10-level (AP, RT) grid using the
+RF model's segmented click intervals as labeled intent, applying the production objective
+function ($w_\text{make}=1.0$, $c_\text{det}=2.5$\,ms, $\beta=0$, $\kappa=2.0$).  The
+static default is scored through the identical firmware FSM simulator to ensure a fair
+comparison.
+
+\begin{table*}[htbp]
+\centering
+\small
+\caption{Optimizer comparison: static default versus per-user optimized (AP, RT)
+configuration. Mean and median over 238 channel-records (134 sessions, 39 participants).
+$\dagger$~Break latency mean under the optimized config is inflated by 9 sessions (4\,\%)
+in which the optimizer selects maximum RT hysteresis; the median is the more informative
+statistic for that metric.}
+\label{tab:optimizer}
+\begin{tabular}{lrrrrrr}
+\hline
+\textbf{Metric}
+  & \multicolumn{2}{c}{\textbf{Static default}}
+  & \multicolumn{2}{c}{\textbf{Optimized}}
+  & \multicolumn{2}{c}{\textbf{$\Delta$}} \\
+& mean & median & mean & median & $\Delta$mean & $\Delta$median \\
+\hline
+Optimizer loss             & 34.2  & 24.8  & 18.4  &  11.7 & $-15.8$ & $-13.1$ \\
+TP rate                    & 0.901 & 0.948 & 0.950 &  1.000 & $+0.049$ & $+0.052$ \\
+Click distance (ms)        & 33.7  & 24.7  & 17.6  &  10.9 & $-16.1$ & $-13.8$ \\
+Make latency (ms)          & 31.2  & 24.7  & 14.4  &  10.1 & $-16.8$ & $-14.6$ \\
+Break latency (ms)$\dagger$ & 33.1 & 21.5  & 1{,}186 & 9.9 & ---   & $-11.6$ \\
+\hline
+\end{tabular}
+\end{table*}
+
+The optimizer reduces loss by 46\,\% (mean) and increases the TP rate from 90.1\,\%
+to 95.0\,\%, recovering an additional 5 percentage points of labeled click intent.
+The most practically significant result is the make-latency reduction: the static
+mid-travel AP (level~5 of 10) requires the user to press well beyond the biomechanical
+onset before the firmware registers the event, producing a mean make latency of
+31.2\,ms.  The per-user optimized AP reduces this to 14.4\,ms --- a 16.8\,ms
+improvement that exceeds the per-keystroke perceptual threshold for actuation
+timing ($\approx$8--12\,ms) and represents a directly perceptible responsiveness gain.
+
+Break latency in the non-degenerate 96\,\% of sessions improves from a median of
+21.5\,ms to 9.9\,ms.  The remaining 4\,\% of sessions select a maximum RT hysteresis
+configuration that defers button release until full travel return, inflating the
+break latency mean.  This behaviour is driven by the low detection-cost parameter
+($c_\text{det}=2.5$\,ms): at this setting the optimizer accepts worse break-timing
+accuracy in exchange for higher TP rate on recordings with irregular depth profiles.
+Increasing $c_\text{det}$ would suppress degenerate RT selection at the cost of
+slightly lower overall recall.
+
+\missblock{Ablation: (1) channel ablation for RF --- train with depth+digital only,
+then progressively add velocity, acceleration, jerk, drift, and report deployment F1
+to justify the zero-phase derivative computation. (2) Soft label ablation for GBT ---
+compare hard one-hot labels + focal loss vs.\ symmetric Gaussian vs.\ asymmetric
+(ours) to validate the split-normal design.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discussion}
+\label{sec:eval-discussion}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The Random Forest achieves the strongest overall result (deployment F1 0.967, LOPO
+mean 0.921), while being the fastest to retrain per session, confirming the design
+rationale for choosing it as the default production architecture.  The heuristic
+baseline achieves F1 0.373, demonstrating that the learned pipeline provides a
+$2.5\times$ improvement in click detection over the rule-based approach; notably,
+the heuristic's duration accuracy on matched clicks (IoU~0.916) slightly exceeds
+the RF (0.912), confirming that its boundary estimates are precise when anchored
+on a true OS event, but it cannot recover firmware-unregistered presses.  GBT
+matches RF on LOPO generalization while offering better recall on the L channel
+(0.952 vs.\ 0.963), at the cost of an 8$\times$ longer training time.  The FCN
+provides no measurable advantage on the left channel (F1 0.945 vs.\ 0.967 RF) and
+degrades substantially on the right channel due to data scarcity, suggesting it is
+best reserved for future work when larger per-user datasets become available.
+
+All models achieve sub-2\,ms mean boundary bias, well within the perceptual threshold
+for click timing. The near-negligible difference between pairing strategies
+implies that the classifier probability outputs are sufficiently
+calibrated for simple greedy assignment to work as well as global optimization.
+
+The optimizer evaluation (Section~\ref{sec:eval-opt}) confirms the practical value of
+personalized calibration: the static mid-travel default imposes a mean make latency of
+31\,ms, which the per-user optimizer reduces to 14\,ms --- a perceptible 17\,ms gain.
+The 4\,\% of sessions where the optimizer selects degenerate RT configurations expose a
+cost-function sensitivity that should be addressed before production deployment.
+

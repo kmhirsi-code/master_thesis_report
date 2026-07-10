@@ -28,9 +28,11 @@ The central hypothesis of this thesis is that per-user variation in click teleme
           sliding-window features for sub-second per-session training, and a deep path
           (dilated residual FCN) operating on raw telemetry with a
           $\pm$1530\,ms learned receptive field.
-    \item A joint CMA-ES optimizer that simulates the peripheral firmware's Rapid
-          Trigger state machine and finds Pareto-optimal (AP, RT) configurations,
-          replacing manual threshold tuning with a data-driven trade-off curve.
+    \item A firmware-faithful threshold optimizer that exhaustively evaluates the
+          discrete (AP, RT) grid via a Rapid Trigger FSM simulator, returning the
+          minimum-loss configuration and a Pareto frontier over detection rate and
+          timing accuracy, replacing manual threshold tuning with a data-driven
+          trade-off curve.
 \end{itemize}
 
 While not a primary algorithmic contribution, the work also includes a small HCI-facing component: purpose-built minigames that recreate common competitive-gaming input scenarios, providing a structured environment for users to generate calibration telemetry and receive a hardware recommendation.
