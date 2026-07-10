@@ -4,8 +4,39 @@
 
 This chapter describes the software and hardware implementation of the system designed in Chapter~\ref{chap:design}.
 
+\section{Data Acquisition Campaign}
+\label{sec:data_acquisition}
+
+The development and training of the machine learning backend required the construction of a robust ground-truth dataset spanning diverse ergonomic and biomechanical profiles. Data was collected from 69 participants via two separate campaigns: a controlled task dataset, including both gamers and non-gamers, in-house, and a free-play dataset at the PolyLAN event. The two datasets were collected under different conditions to capture both structured and unstructured click dynamics.
+
+\subsection{Controlled Task Dataset (BIC Event)}
+The first deployment cohort ($N=26$) comprised a mix of competitive gamers to casual novices playing \textit{Counter-Strike 2} (CS2). The protocol ran for approximately 40 minutes per user and was strictly structured to isolate specific click dynamics:
+\begin{itemize}
+    \item \textbf{Configuration A/B Testing:} Following a uniform warmup phase, users played two 15-minute game blocks. The device hardware profile was hot-swapped halfway through the session, alternating between an aggressive configuration (AP at 1, RT at 1) and a highly conservative configuration (AP at 5, zero Rapid Trigger). The presentation order was randomized to mitigate sequence bias.
+    \item \textbf{Weapon Rotations:} Within each 15-minute block, users were instructed to rotate their active weapon every five minutes. The arsenal was specifically chosen to evoke distinct motor patterns: the \textit{USP-S} pistol for rapid individual tapping, the \textit{M4A1-S} rifle for sustained tracking and spraying, and the \textit{AWP} sniper rifle for slow, deliberate holding and release.
+\end{itemize}
+Qualitative user feedback regarding the switch feel was collected asynchronously after the sessions via standardized surveying.
+
+\subsection{Free-Play Dataset (PolyLAN Event)}
+The secondary dataset ($N=43$) focused on unstructured free-play in a high-density LAN environment. Participants engaged in approximately 40-minute play sessions in their preferred title (\textit{CS2}, \textit{Valorant}, or \textit{League of Legends}). Similar to the controlled dataset, the hardware configurations were swapped from conservative to aggressive baseline profiles near the 20-minute mark to capture a wider range of organic responses. FPS players produced predominantly left-button click profiles consistent with primary-fire mechanics; \textit{League of Legends} players generated a contrasting signature of high-frequency right-click interactions, characteristic of point-and-click action commands.
+
+The aggregated dataset generated from these two campaigns ultimately produced hundreds of hours of raw 1\,kHz telemetry, demanding the variance entropy scoring (detailed in Section~\ref{chap:design}) to isolate periods of genuine engagement before entering the classification pipelines.
+
+\subsection{Annotated Dataset Summary}
+Following manual annotation and variance-based trimming, the final curated dataset comprises 132 labeled recording files from 39 FPS-player participants, totaling approximately 12,196 seconds (\textasciitilde3.4 hours) of verified active telemetry. Left-channel annotations account for 39,088 labeled click cycles and right-channel annotations for 6,645 cycles, reflecting the predominance of primary-fire left-button interactions in FPS gameplay. The dataset was partitioned into training, validation, and test splits performed at the participant level to enforce strict subject isolation. We decided to hold out the League of Legends participants from the scope of this thesis, as their click dynamics were not representative of the FPS-focused design goals.
+
 \section{Frontend and Telemetry Stack}
-The user-facing layer is built within GSense, providing the orchestration dashboard, recording states, and test minigames. Telemetry ingestion is managed primarily by GXT-Devio via HIDPP and seamlessly synchronized by the Nightfall background service. This layered composition ensures that 1\,kHz hardware polling runs safely out-of-process, leaving the GSense frontend free to organize workflows without stalling the main analytical execution arrays.
+The user-facing layer provides the orchestration dashboard, recording states, and test minigames. Telemetry ingestion is handled out-of-process by a dedicated background sensor service, ensuring that 1\,kHz hardware polling never stalls the frontend workflows.
+
+\subsection{Analog Decoder and Translator}
+Raw telemetry is stored as a sparse binary event stream capturing only state-change transitions. A dedicated decoder parses this format and resamples the event sequence to a uniform 1\,ms grid using Modified Akima (MAKIMA) interpolation, which preserves the monotonic shape of the analog depth signal without the overshoot characteristic of standard cubic splines. Short resting gaps receive synthetic zero-value anchors before interpolation to prevent overshoot across idle periods. The output per frame consists of the quantized analog depth on a 0--120 scale, a digital press bit for each button, and a wall-clock timestamp. A client-side signal processing layer subsequently derives the kinematic channels---velocity, acceleration, jerk, and resting drift---from the interpolated depth, making them available for visualization and downstream annotation.
+
+\subsection{Labeling Interface}
+The annotation interface renders the decoded 1\,kHz analog depth signal for both buttons alongside the derived kinematic channels, enabling annotators to judge biomechanical intent from the full kinematic context rather than raw depth alone. MAKIMA interpolation is applied at twice the native sampling rate on the client side to smooth the velocity overlay for visual clarity, without introducing causal shift. Annotators interact with segment boundaries via draggable handles: the start and end boundaries of each labeled region can be adjusted independently per channel, whole segments can be repositioned by body-drag, and new segments are created by dragging in unlabeled space. Visual overlays distinguish manual annotations from algorithmically generated candidates, and highlight model-generated suggestions alongside their associated confidence scores.
+
+Annotation followed the three-phase iterative strategy described in Section~\ref{sec:labeling}. An algorithmic bootstrapping heuristic pre-populates boundary candidates to seed manual review. For the Make boundary, the algorithm walks the analog signal backward from the OS-reported key-down event, stopping at the first non-zero depth sample or the nearest preceding local trough to anchor the biomechanical press onset before the firmware actuation threshold was crossed. For the Break boundary, it identifies the first zero-crossing of the analog velocity after the press peak---the point at which the finger begins lifting---which consistently precedes the OS key-up event and more accurately reflects physical intent.
+
+This heuristic performs well on clean, well-separated clicks but has systematic failure modes that motivate the full annotation pipeline. It relies entirely on the OS digital event as an anchor, so clicks that were biomechanically executed but not registered by the firmware---because the actuation threshold was set deeper than the finger reached---are entirely invisible to it. It is also sensitive to sensor noise near the rest position, where micro-tremors can produce spurious troughs that attract the backward walk and misplace the Make boundary. These failure modes---unregistered presses and noise-induced misplacements---are precisely the edge cases most informative for training a robust intent model, and are the primary reason human review remained indispensable throughout the annotation process.
 
 \section{Machine Learning Backend}
 \label{sec:ml_backend}
@@ -13,10 +44,10 @@ The user-facing layer is built within GSense, providing the orchestration dashbo
 The machine learning pipeline is encapsulated in a dedicated Python intent-detection backend built with scikit-learn, LightGBM, and PyTorch.
 
 \subsection{Loading and Frame Extraction}
-Each recording file is paired with a JSON label sidecar validated at load time. The 120-level analog depth stream is normalised to $[0,1]$ by dividing by 120, and binary digital press signals are cast to \{0.0, 1.0\}. Only segments annotated as \texttt{source=manual} are ingested; algorithmically generated segments are discarded. Each manually annotated click segment maps to three frame-level classes: Make Onset, Click Hold, and Break Onset. Onset zones extend up to $\pm 8$ frames from each boundary marker to absorb annotation imprecision, but are clamped to at most one-third of the segment length and against adjacent segment boundaries to prevent cross-segment label contamination. A mtime-keyed in-memory cache prevents redundant re-parsing of unchanged files.
+Each recording file is paired with a JSON label sidecar validated at load time. The 120-level analog depth stream is normalised to $[0,1]$ by dividing by 120, and binary digital press signals are cast to \{0.0, 1.0\}. Only segments annotated as \texttt{source=manual} are ingested; algorithmically generated segments are discarded. Each manually annotated click segment maps to three frame-level classes: Make Onset, Click Hold, and Break Onset. Onset zones extend $\pm 4$\,ms from each boundary marker to absorb natural annotation imprecision---a tolerance calibrated empirically to preserve signal sharpness while remaining robust to small annotator variability---and are clamped against adjacent segment boundaries to prevent cross-segment label contamination. A mtime-keyed in-memory cache prevents redundant re-parsing of unchanged files.
 
 \subsection{Preprocessing and Signal Augmentation}
-The analog channels optionally receive temporal smoothing (moving average, Gaussian, Savitzky-Golay, median, or EMA). Kinematic derivative channels---velocity, acceleration, jerk, and their absolute-value variants---are computed via zero-phase Akima-spline upsampling (2$\times$) followed by centered finite differences and downsampling, eliminating causal shift. A resting-drift channel is derived as the difference of a fast EMA ($\tau \approx 20$\,ms) and a slow EMA ($\tau \approx 200$\,ms), both applied zero-phase. Continuous channels are optionally decimated using an 8th-order zero-phase Chebyshev IIR low-pass filter before striding; discrete digital channels are strided only. A rolling-window activity mask (window 25 frames, amplitude threshold 0.02, variance threshold $10^{-4}$) trims inactive interior gaps longer than 500 frames while retaining 50-frame margins on each side and all labeled frames, splitting the recording into independent sub-sequences.
+The analog channels optionally receive temporal smoothing (moving average, Gaussian, Savitzky-Golay, median, or EMA). Kinematic derivative channels---velocity, acceleration, jerk, and their absolute-value variants---are computed via zero-phase Akima-spline upsampling followed by centered finite differences and downsampling, eliminating causal shift. A resting-drift channel is derived as the difference of a fast and a slow exponential moving average, both applied zero-phase, capturing low-frequency postural drift independently of click dynamics. Continuous channels are optionally decimated using a zero-phase Chebyshev IIR low-pass filter before striding; discrete digital channels are strided only. A rolling-window activity mask based on configurable amplitude and variance thresholds trims inactive interior gaps, retaining short margins around each boundary and all labeled frames, and splits the recording into independent active sub-sequences.
 
 \subsection{Splitting, Normalization, and Sample Weighting}
 Sub-sequences are partitioned into train, validation, and test at the sequence level. The preferred strategy is participant-level k-fold cross-validation: sequences are grouped by \texttt{user\_id} (extracted from the file path via \texttt{p\textbackslash d+} regex), each fold holds out exactly one participant group, and sequences without a \texttt{user\_id} always go to training. Z-score normalization is fitted on the training partition only. For kinematic channels (velocity, acceleration, jerk, drift) the standard deviation is computed over non-background frames exclusively to prevent the background mass from compressing the feature scale. Binary digital and constant per-recording configuration channels are excluded from normalization.
@@ -24,9 +55,47 @@ Sub-sequences are partitioned into train, validation, and test at the sequence l
 Click-balanced per-frame sample weights equalize participant contributions. For participant $u$ with $C_u$ click events and $b_u$ background frames, the weight of a frame belonging to click event $e$ spanning $|F_e|$ frames is $(1/C_u)/|F_e|$, and the weight of a background frame is $1/b_u$. Weights are then rescaled per class to preserve the click/background mass ratio, and capped at a maximum ratio of 10 via iterative convergence. The Random Forest additionally applies inverse-frequency class weights scaled by configurable per-class multipliers, providing an independent knob for the cost of each misclassification type.
 
 \subsection{Feature Extraction and Model Ingestion}
-For the Random Forest and Gradient Boosted Trees, sliding-window feature extraction produces one tabular vector per frame. Each window spans 33 frames ($\pm 16$ around the centre frame, padded by edge-repetition at boundaries) and computes seven per-channel features by default: window mean, first-to-last slope, peak, velocity at the centre frame, time-to-peak, minimum, and time-to-trough. Five cross-channel features are always appended: L/R analog correlation, its absolute value, whether the left digital signal fires during an analog rise, the same for the right, and the maximum analog value across both sides. For the base four-channel input this yields $4 \times 7 + 5 = 33$ features per frame, growing by 7 for each additional derived channel enabled. An extended 13-feature bank (adding range, zero-crossing rate, TKEO energy, kurtosis, and waveform length) is available but disabled by default. Extraction is chunked in blocks of 50{,}000 frames to bound peak memory. Optional context probes append raw or locally averaged analog samples at configurable temporal offsets (e.g.\ $\pm$50\,ms, $\pm$100\,ms).
+For the Random Forest and Gradient Boosted Trees, sliding-window feature extraction produces one tabular vector per frame. Each window is centered on the target frame and computes a fixed bank of per-channel statistics: window mean, first-to-last slope, peak, velocity at the centre frame, time-to-peak, minimum, and time-to-trough. A set of cross-channel features is always appended: left/right analog correlation, whether each digital channel fires during an analog rise, and the maximum analog value across both switches. The feature set grows by one additional per-channel block for each derived channel enabled (e.g.\ velocity, acceleration, jerk, drift). An extended feature bank is also available, adding higher-order statistics such as zero-crossing rate, TKEO energy, and kurtosis. Optional context probes append raw or locally averaged analog samples at configurable temporal offsets (e.g.\ $\pm$50\,ms, $\pm$100\,ms).
 
-The FCN bypasses tabular extraction and receives raw $[C, T]$ tensors directly. Training labels are converted to a 3-channel heatmap: channels 0 and 1 carry Gaussian probability bumps ($\sigma$ = 8 frames) centred on each Make and Break onset frame respectively, and channel 2 carries a binary hold mask. A focal binary cross-entropy loss is applied per channel per frame, with per-frame sample weights scaling the loss directly. When sequence-window training is used, an 8-frame zero-weight gap is inserted between recordings in the concatenated hypersequence so no sliding window can span a boundary.
+The FCN bypasses tabular extraction and receives raw $[C, T]$ tensors directly. The architecture consists of an input projection convolution, eight stacked dilated residual blocks each containing two convolutional layers, and a per-frame output classifier---18 convolutional layers in total. The dilation factor doubles at each successive block ($1, 2, 4, \ldots, 128$), producing an effective receptive field of
+\[
+  RF = 2(k-1)(2^D - 1)
+\]
+which evaluates to 3\,060 frames ($\approx$3\,s at 1\,kHz) with kernel size $k = 7$ and $D = 8$ dilation stages. Each block applies symmetric non-causal padding---equal context on both sides of each convolution---so the model introduces no temporal shift in its predictions. A ReLU activation and dropout are applied between the two convolutional layers of each block; the skip connection within each residual block is an identity map throughout, as all blocks share the same hidden channel dimension. Training labels are converted to a 3-channel heatmap: channels 0 and 1 carry Gaussian probability bumps ($\sigma$ = 8 frames) centred on each Make and Break onset frame respectively, and channel 2 carries a binary hold mask. A focal binary cross-entropy loss is applied per channel per frame, with per-frame sample weights scaling the loss directly. When sequence-window training is used, an 8-frame zero-weight gap is inserted between recordings in the concatenated hypersequence so no sliding window can span a boundary.
+
+\subsection{Gradient Boosted Trees}
+The Gradient Boosted Trees model shares the sliding-window tabular feature extraction pipeline described above; every per-frame feature vector is identical to the one supplied to the Random Forest. The distinguishing design concerns are the training objective and the label targets.
+
+At onset boundaries, hard one-hot labels are replaced by asymmetric soft targets. A split-normal Gaussian is centred on each annotated onset frame, with independent standard deviations on either side: for Make Onset, the left standard deviation (frames preceding the onset) is wider than the right, encoding that detecting slightly early is less harmful than a late detection; for Break Onset the asymmetry is reversed. Soft target vectors are normalized to sum to 1.0 per frame before training.
+
+Two training objectives are supported depending on whether soft or hard labels are active. With hard labels, a focal cross-entropy variant suppresses the gradient contribution of easy background frames, reducing the dominance of the majority class. With soft labels, a custom gradient and Hessian objective replaces the standard multiclass cross-entropy to align with the continuous target distribution. In both cases, early stopping is evaluated on hard-label accuracy over the held-out validation partition, keeping the stopping signal interpretable and comparable across configurations.
+
+\section{From Classification to Segmentation}
+\label{sec:segmentation_impl}
+
+The per-frame classifier produces a probability array over all four classes for the full recording. Converting these continuous outputs into discrete (start, end) click intervals requires three sequential stages: identifying candidate onset regions, electing a single representative frame from each region, and pairing each Make onset with a corresponding Break onset.
+
+\subsection{Candidate Run Detection}
+The Make probability channel is processed with a Schmitt-trigger hysteresis: a candidate run opens when the probability exceeds a configurable entry threshold and remains open until it falls to half that value. This two-threshold bridging behavior prevents a single physical press---whose probability hump can dip transiently below the entry threshold due to softmax saturation or quantization noise---from being fragmented into multiple spurious candidates. Break runs are detected with a simpler single-threshold scheme, as the break probability signal is generally less susceptible to mid-run fluctuations.
+
+\subsection{Onset Frame Election}
+Within each candidate run, a single frame must be elected as the representative onset. Three strategies are implemented and evaluated jointly with the threshold parameters during hyperparameter selection:
+\begin{itemize}
+  \item \textbf{Peak:} the frame with the highest probability within the run (argmax). Simple and effective when probability humps are narrow and well-localised.
+  \item \textbf{Plateau median:} the median index among all frames whose probability lies within 0.5\% of the run peak. Falls back to the argmax when no plateau exists. More robust than the peak strategy when the probability curve saturates and a large contiguous plateau forms near~1.
+  \item \textbf{Steepest rise/fall:} the frame of maximum probability gradient---the inflection point of the probability curve. This estimate is insensitive to plateau saturation and most responsive to the sharpest temporal edge of the onset hump.
+\end{itemize}
+
+\subsection{Make--Break Pairing}
+Given the elected Make and Break onset frames, a matching step assigns each Make to exactly one Break. Three strategies of increasing sophistication are evaluated:
+\begin{itemize}
+  \item \textbf{Greedy first-fit} (baseline): each Make is paired with the first eligible Break that falls within the Make run's search window.
+  \item \textbf{Hungarian assignment:} the globally optimal one-to-one matching, solved via the linear sum assignment algorithm. The cost of pairing Make~$i$ with Break~$j$ is the negative product of their confidence scores, penalized by a term proportional to the temporal distance between the elected frames normalized by the search window, discouraging implausibly long-duration pairings.
+  \item \textbf{Trained pairing scorer:} a logistic regression classifier fit on positive and negative (Make, Break) pairs extracted from the training set replaces the raw confidence product as the cost signal in the Hungarian framework. The scorer uses six features per candidate pair: Make confidence, Break confidence, log inter-onset duration, Make run width, Break run width, and the number of competing Break runs within the Make search window. Training uses balanced class weights to compensate for the natural scarcity of positive pairs.
+\end{itemize}
+
+\subsection{Hyperparameter Selection via Bayesian Sweep}
+The optimal combination of election strategy, entry threshold, and exit threshold is determined by maximizing the segmentation IoU between predicted and ground-truth click intervals on the held-out validation set. A Bayesian search using a Tree-structured Parzen Estimator (TPE) sampler is employed, backed by a persistent SQLite store that allows sweeps to be paused and resumed across sessions. When the Cartesian product of the discrete search space falls at or below 200 candidate combinations, the sampler automatically transitions to exhaustive grid enumeration to guarantee full coverage. The elected strategy, pairing strategy, and threshold values are stored alongside the trained model weights so that inference uses the identical configuration selected during validation.
 
 \section{Optimization Pipeline Integration}
 \label{sec:optimizer_impl}
@@ -66,6 +135,7 @@ For landscape visualization, the deployed depth-depth path emits its exhaustive 
 
 \begin{figure*}[htbp]
 \centering
+\scalebox{0.8}{%
 \begin{tikzpicture}[
   font=\small\sffamily,
   st/.style={circle, draw=black!40, line width=0.7pt, minimum size=1.3cm, align=center, font=\small\bfseries\sffamily},
@@ -89,13 +159,14 @@ For landscape visualization, the deployed depth-depth path emits its exhaustive 
 
 \node[font=\scriptsize\itshape,text=black!55] at (4.8,-1.85)
   {$^*a$ = analog depth value at frame $t$};
-\end{tikzpicture}
+\end{tikzpicture}}
 \caption{Simple threshold (no Rapid Trigger) FSM. A Make event fires when depth crosses above $\theta_{\text{make}}$; a Break event fires when depth falls back below the same threshold. The four states correspond directly to the four classifier output classes.}
 \label{fig:fsm_nort}
 \end{figure*}
 
 \begin{figure*}[htbp]
 \centering
+\scalebox{0.8}{%
 \begin{tikzpicture}[
   font=\small\sffamily,
   st/.style={circle, draw=black!40, line width=0.7pt, minimum size=1.3cm, align=center, font=\small\bfseries\sffamily},
@@ -140,28 +211,7 @@ For landscape visualization, the deployed depth-depth path emits its exhaustive 
 
 \node[font=\scriptsize\itshape,text=black!55] at (5,-3.65)
   {$^*a$ = analog depth value at frame $t$};
-\end{tikzpicture}
+\end{tikzpicture}}
 \caption{Rapid Trigger (RT) FSM. Once pressed, the button releases when depth drops by the RT sensitivity below the last observed peak. From the RT-released state the button re-actuates when depth rises above the last trough by the RT sensitivity, producing another Make onset; it fully resets to idle when depth returns to zero.}
 \label{fig:fsm_rt}
 \end{figure*}
-
-\section{Data Acquisition Campaign}
-\label{sec:data_acquisition}
-
-The development and training of the machine learning backend required the construction of a robust ground-truth dataset spanning diverse ergonomic and biomechanical profiles. Data was collected from 69 participants via active field deployments at two major public gaming events (BIC and PolyLAN).
-
-\subsection{Controlled Task Dataset (BIC Event)}
-The first deployment cohort ($N=26$) comprised a mix of highly ranked competitive gamers and casual novices playing \textit{Counter-Strike 2} (CS2). The protocol ran for approximately 60 minutes per user and was strictly structured to isolate specific click dynamics:
-\begin{itemize}
-    \item \textbf{Configuration A/B Testing:} Following a uniform warmup phase, users played two 15-minute game blocks. The device hardware profile was hot-swapped halfway through the session, alternating between an aggressive configuration (AP at 1, RT at 1) and a highly conservative configuration (AP at 5, zero Rapid Trigger). The presentation order was randomized to mitigate sequence bias.
-    \item \textbf{Weapon Rotations:} Within each 15-minute block, users were instructed to rotate their active weapon every five minutes. The arsenal was specifically chosen to evoke distinct motor patterns: the \textit{USPS} pistol for rapid individual tapping fatigue, the \textit{M4A1} rifle for sustained tracking and spraying, and the \textit{AWP} sniper rifle for slow, deliberate holding and release. 
-\end{itemize}
-Qualitative user feedback regarding the switch feel was collected asynchronously after the sessions via standardized surveying.
-
-\subsection{Free-Play Dataset (PolyLAN Event)}
-The secondary dataset ($N=43$) focused on unstructured free-play in a high-density LAN environment. Participants engaged in approximately 40-minute play sessions utilizing their preferred competitive title (\textit{League of Legends}, \textit{CS2}, or \textit{Valorant}). Similar to the controlled dataset, the hardware configurations were silently swapped from conservative to aggressive baseline profiles near the 20-minute mark to capture a wider net of organic responses.
-
-The aggregated dataset generated from these two campaigns ultimately produced hundreds of hours of raw 1\,kHz telemetry, demanding the variance entropy scoring (detailed in Section~\ref{chap:design}) to isolate periods of genuine engagement before entering the classification pipelines.
-
-\subsection{Annotated Dataset Summary}
-Following manual annotation and variance-based trimming, the final curated dataset comprises 132 labeled recording files from 39 participants, totaling approximately 12,196 seconds (\textasciitilde3.4 hours) of verified active telemetry. Left-channel annotations account for 39,088 labeled click cycles and right-channel annotations for 6,645 cycles, reflecting the predominance of left-button interactions in competitive gaming. The dataset was partitioned into training, validation, and test splits performed at the participant level to enforce strict subject isolation.
