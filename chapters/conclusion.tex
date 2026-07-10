@@ -3,87 +3,111 @@
 
 \section{Summary}
 
-This thesis investigated whether per-user variation in analog mouse-click telemetry is
-structured enough to support automatic labeling, statistical modeling, and firmware
-parameter optimization beyond static default settings.  The answer is affirmative on
-all three fronts.
+This thesis set out to answer whether per-user variation in analog mouse-click
+telemetry is structured enough to support automatic labeling, statistical modeling,
+and firmware parameter optimization beyond static factory defaults.  The answer is
+yes on all three fronts, confirmed by a complete pipeline evaluated on a corpus of
+132 annotated recordings from 39 participants collected at two public gaming events.
 
 \paragraph{Labeling pipeline.}
-A hybrid annotation pipeline was designed and deployed at scale across two public
-gaming events (BIC and PolyLAN), producing a corpus of 132 annotated recordings from
-39 participants totaling 3.4 hours of verified 1\,kHz telemetry with 39,088 left-button
-and 6,645 right-button click cycles.  The pipeline combines an OS-event-anchored
-walk-back heuristic for bootstrapping with model-assisted labeling and human review,
-reducing per-recording annotation burden while maintaining biomechanical fidelity.
+An algorithmic bootstrapping heuristic combined with iterative model-assisted
+annotation produced 39,088 verified left-button and 6,645 right-button click cycles
+at 1\,kHz.  The three-phase workflow (heuristic bootstrap $\to$ model-assisted
+labeling $\to$ human review) substantially reduced annotation burden relative to
+labeling from scratch while maintaining biomechanical fidelity: the heuristic alone
+achieves F1~0.373, showing that human review is essential for the firmware-unregistered
+and noise-confounded cases that are most informative for model training.
 
 \paragraph{Click-intent classification.}
-Three architectures were trained and evaluated on a held-out participant-level test
-set.  The Random Forest achieves a deployment F1 of 0.967 on the left channel (LOPO
-mean 0.921 $\pm$ 0.024), with make- and break-boundary bias under 1.5\,ms and timing
-spread under 2.2\,ms --- all well within the perceptual threshold for click timing.
-The Gradient Boosted Trees model matches this generalization performance while offering
-slightly higher recall, at the cost of $8\times$ longer training time.  The dilated
-residual FCN provides no measurable advantage on the left channel but degrades
-substantially on the right channel (F1 0.813) due to data scarcity, confirming that its
-3\,s receptive field benefits require a larger corpus than currently available.  All
-three models improve substantially over the heuristic baseline (deployment F1 0.373 on
-the left channel), directly validating the value of the learned pipeline.
+The Random Forest achieves a deployment F1 of 0.967 on the left channel
+(LOPO mean 0.921~$\pm$~0.024), with make- and break-boundary bias under 1.5\,ms ---
+well within the 8--12\,ms perceptual threshold.  Random Forest and Gradient Boosted
+Trees achieve identical leave-one-participant-out generalization while the RF trains
+$8\times$ faster, confirming it as the default production architecture.  The dilated
+FCN, despite a 3,060-frame receptive field, provides no measurable gain on the
+left channel and degrades on the data-scarce right channel (F1~0.813), revealing
+that large-context models require proportionally large annotated corpora.
 
 \paragraph{Firmware threshold optimizer.}
-The FSM optimizer was evaluated by comparing the per-user optimized (AP, RT)
-configuration against the device's static mid-travel default across 238 channel-records
-from 39 participants.  The optimizer reduces optimizer loss by 46\,\% (mean), increases
-the TP rate from 90.1\,\% to 95.0\,\%, and --- most importantly --- reduces mean make
-latency from 31.2\,ms to 14.4\,ms, a 16.8\,ms improvement that exceeds the
-per-keystroke perceptual threshold.  This demonstrates that per-user calibration
-produces a directly perceptible responsiveness gain over factory defaults.
+The exhaustive FSM simulator reduced optimizer loss by 46\,\% (Wilcoxon $W=0$,
+$n=238$, $p\ll 0.001$), increased the TP rate from 90.1\,\% to 95.0\,\%, and reduced
+mean make latency from 31.2\,ms to 14.4\,ms --- a 16.8\,ms improvement that spans
+roughly 1.5 perceptual just-noticeable differences for input timing, and represents a
+directly perceptible responsiveness gain available to every user without any manual
+configuration.
 
 \section{Limitations}
 \label{sec:conclusion-lim}
 
-Several limitations constrain the current scope.  First, the right-button corpus is
-approximately six times smaller than the left, causing both the FCN and the heuristic
-to degrade significantly on that channel; a balanced collection protocol is needed for
-production right-channel deployment.  Second, the optimizer's detection-cost parameter
-($c_\text{det}=2.5$\,ms) leads to degenerate RT configurations in 4\,\% of sessions,
-trading break-timing accuracy for higher TP rate; this sensitivity should be resolved
-before user-facing deployment.  Third, the evaluation relies on a single hardware
-platform (HITS-enabled PRO X2 Superstrike); generalization to other analog input
-devices with different sensor resolutions or firmware architectures has not been
-assessed.  Finally, ablation studies for the channel-derivative pipeline and the GBT
-asymmetric soft-label design were not completed within the scope of this thesis and
-remain as open verification items.
+\paragraph{Right-channel data imbalance.}
+The right-button corpus is approximately six times smaller than the left (6,645 vs.\
+39,088 cycles), causing the FCN and the heuristic to degrade significantly on that
+channel.  A balanced collection protocol --- or a dedicated right-click minigame that
+naturally elicits more right-button activity --- is needed for production
+right-channel deployment.
+
+\paragraph{Single hardware platform.}
+All data was collected on a single HITS-enabled PRO~X2 Superstrike mouse.
+Generalization to other analog input devices with different sensor resolutions,
+quantization levels, or firmware architectures has not been tested.  The
+feature-engineering pipeline (step120 depth, derivative channels) is designed to
+be device-agnostic, but empirical transfer must be verified.
+
+\paragraph{Degenerate RT configurations.}
+The optimizer's low detection-cost parameter ($c_\text{det}=2.5$\,ms) causes 4\,\%
+of sessions to select a maximum-hysteresis RT configuration that defers button
+release until full travel return, inflating break latency to several hundred
+milliseconds.  This cost-function sensitivity must be resolved --- either by raising
+$c_\text{det}$ or by introducing a hard constraint on maximum break latency ---
+before user-facing deployment.
+
+\paragraph{Annotation ambiguity at onset boundaries.}
+The $\pm 4$\,ms onset tolerance absorbs natural annotator variability, but for
+borderline clicks at the edge of the biomechanical window the correct label boundary
+is genuinely ambiguous.  The asymmetric soft-label targets for the GBT model
+partially address this, but a formal inter-annotator agreement study was not
+conducted; the reported metrics therefore include an irreducible component of
+label noise.
+
+\paragraph{Missing ablation evidence.}
+Channel-ablation experiments for the RF (isolating the contribution of each kinematic
+derivative channel) and soft-label ablation experiments for the GBT (comparing hard,
+symmetric, and asymmetric targets) were not completed within the scope of this thesis.
+These experiments would directly validate two design contributions and remain as
+open verification items.
 
 \section{Future Work}
 \label{sec:conclusion-fw}
 
 \paragraph{On-device inference.}
-The current pipeline is offline.  Quantizing the Random Forest to INT8 and deploying
-it on the peripheral's MCU would enable real-time per-frame classification at 1\,kHz
-without a host connection, matching the latency requirements identified in the
-Background chapter.
+The current pipeline is entirely offline.  Quantizing the Random Forest to INT8 and
+deploying it on the peripheral MCU would enable real-time per-frame classification at
+1\,kHz without a host connection, matching the latency requirements discussed in the
+Background chapter and opening the path to adaptive threshold adjustment during play.
 
 \paragraph{Adaptive recalibration.}
-Neuromotor fatigue shifts the analog depth signal over the course of a gaming session.
-A lightweight online recalibration loop --- monitoring the running mean of the resting
-drift channel and nudging the actuation threshold accordingly --- could maintain the
-optimized configuration as the user's biomechanical state changes.
+Neuromotor fatigue shifts the analog depth signal over the course of a gaming session
+--- specifically, the resting drift channel rises as the flexor muscles tire.  A
+lightweight online loop that monitors the running mean of the resting-drift channel
+and nudges the actuation threshold accordingly could maintain the optimized
+configuration as the user's biomechanical state evolves.
 
-\paragraph{Cross-device generalization.}
-The labeling and modeling pipeline is device-agnostic in principle; replicating the
-data collection on Hall-effect keyboards and alternative mouse switches would test
-whether the trained feature representations transfer, and whether a single universal
-model is feasible or per-device adaptation is required.
+\paragraph{Cross-device and cross-game generalization.}
+Replicating the data collection on Hall-effect keyboards and alternative mouse
+switches would test whether the trained feature representations transfer, and whether
+a single universal model is feasible or per-device fine-tuning is required.  The
+game-genre effect (FPS vs.\ MOBA click patterns, as observed in the PolyLAN dataset)
+is also worth modelling explicitly to produce genre-aware recommendations.
 
 \paragraph{Ablation and soft-label validation.}
 Completing the channel-ablation and GBT soft-label ablation experiments would
-quantify the individual contribution of each engineered feature group and confirm
-that the asymmetric split-normal Gaussian targets measurably outperform symmetric
-or hard-label alternatives.
+quantify the individual contribution of each kinematic feature group and confirm
+that asymmetric split-normal Gaussian targets measurably outperform symmetric or
+hard-label alternatives, directly validating two thesis contributions.
 
 \paragraph{User perception study.}
 An end-to-end perceptual study --- presenting participants with their static-default
 and per-user-optimized configurations in counterbalanced order and measuring
-self-reported latency and accuracy --- would close the loop between the objective
-timing improvements reported here and the subjective experience that motivates the
-work.
+self-reported latency perception and click accuracy --- would close the loop between
+the objective timing improvements reported here and the subjective experience that
+motivates the work.

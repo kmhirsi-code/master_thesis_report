@@ -1,7 +1,7 @@
 \chapter{Related Work}
 %%%%%%%%%%%%%%%%%%%%%%
 
-This chapter surveys prior work across the five domains that the proposed system draws on and contributes to: adaptive threshold methods for HID devices, temporal sequence labeling from biosignals, programmatic labeling and weak supervision, dilated convolutional architectures for sequence modeling, and transformer-based event decoding for temporal sequences.
+This chapter surveys prior work across four domains that the proposed system draws on: adaptive threshold methods for HID devices, temporal sequence labeling from biosignals, programmatic labeling and weak supervision, and dilated convolutional architectures for sequence modeling.
 
 \section{Adaptive Threshold Methods for HID Devices}
 
@@ -11,7 +11,7 @@ Kim et al.~\cite{impact2018} introduced \emph{impact activation}, an alternative
 
 Trewin~\cite{dynamic_keyboard} proposed the \emph{Dynamic Keyboard}, which automatically adjusts keyboard response parameters (minimum press duration, maximum bounce interval) to accommodate users with motor impairments, by observing an initial calibration sequence and adjusting parameters using rule-based adaptation. The Dynamic Keyboard targets binary on/off switch events and adjusts temporal debounce windows; it does not exploit continuous analog depth signals, and its adaptation rules are domain-expert heuristics rather than models trained from user data. The proposed system is complementary in motivation---both aim to reduce unintended actuations---but operates at a different signal level (continuous depth at 1\,kHz vs.\ binary event timing) and uses a data-driven model rather than hand-coded rules.
 
-To the best of our knowledge, peer-reviewed literature has not yet reported a complete learning-based pipeline for automatic joint tuning of Rapid Trigger (RT) and Actuation Point (AP). Current commercial implementations~\cite{wooting_rapid_trigger, logitech_superstrike_2026} primarily expose RT and AP as user-adjusted controls without closed-loop personalization. The joint CMA-ES optimizer in this thesis therefore positions RT/AP tuning as an explicitly optimized per-user objective rather than a manual configuration task.
+To the best of our knowledge, peer-reviewed literature has not yet reported a complete learning-based pipeline for automatic joint tuning of Rapid Trigger (RT) and Actuation Point (AP). Current commercial implementations~\cite{wooting_rapid_trigger, logitech_superstrike_2026} primarily expose RT and AP as user-adjusted controls without closed-loop personalization. The firmware-faithful threshold optimizer in this thesis therefore positions RT/AP tuning as an explicitly optimized per-user objective rather than a manual configuration task.
 
 \section{Temporal Sequence Labeling in Biosignal Processing}
 
@@ -31,7 +31,7 @@ Instead of deploying the geometric auto-labeler as an automated weak supervision
 
 The OfflineFCN architecture adapts the dilated causal convolution structure introduced by van den Oord et al.\ in WaveNet~\cite{van_den_oord_wavenet_2016} for raw audio generation. WaveNet stacks dilated causal convolutional layers with exponentially increasing dilation rates to achieve a large receptive field with manageable parameter counts. The dilation schedule $d_i = 2^i$ allows the stack to cover $\sum 2^i$ steps of context with $O(\log N)$ layers rather than the $O(N)$ layers that a fixed-dilation architecture would require.
 
-The OfflineFCN departs from WaveNet in one critical dimension: it uses symmetric (non-causal) padding rather than causal (left-only) padding. This doubles the effective receptive field per layer for the same kernel size, since context is drawn from both directions---enabling the $\pm$1530\,ms receptive field described in Section~\ref{sec:modeling} to be achieved with only 8 blocks. The trade-off is that the resulting model cannot be deployed for streaming inference, since each output depends on future samples. This is appropriate for the offline analysis mode but excludes the model from the on-device path described as future work.
+The OfflineFCN departs from WaveNet in one critical dimension: it uses symmetric (non-causal) padding rather than causal (left-only) padding. This doubles the effective receptive field per layer for the same kernel size, since context is drawn from both directions---enabling the 3{,}060-frame ($\approx$3\,s at 1\,kHz) receptive field described in Section~\ref{sec:modeling} to be achieved with only 8 blocks. The trade-off is that the resulting model cannot be deployed for streaming inference, since each output depends on future samples. This is appropriate for the offline analysis mode but excludes the model from the on-device path described as future work.
 
 
 %%%%%%%%%%%%%%%%%%%%

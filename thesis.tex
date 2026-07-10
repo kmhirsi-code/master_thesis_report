@@ -49,12 +49,10 @@
 \adviser{Prof. Mathieu Salzmann}
 %\coadviser{Second Adviser}
 \expert{Richard Lengagne}
-\ackquote{``I struggled for a long time\\
-with surviving.\\
-And no matter what,\\
-you keep finding something\\
-to fight for.''\\
---- The Last of Us}
+\ackquote{``Pour ceux qui \\
+viendront apr\`es.''\\
+--- Clair Obscur, Expedition 33}
+
 \acknowledgments{%
 I would like to express my sincere gratitude to Christophe Constantin, my supervisor at Logitech, for his trust, guidance, and critical perspective throughout this thesis. I am equally thankful to Yael, a close collaborator on this project, whose feedback and thoughtful challenges helped sharpen both the ideas and the direction of the work. I am also deeply grateful to Professor Mathieu Salzmann for his valuable advice, high standards, and steady guidance in ensuring that this thesis remained rigorous and focused.
 
@@ -69,7 +67,7 @@ On a more personal note, I am deeply grateful to my partner, Sophia, for the pat
 \makeacks
 
 \begin{abstract}
-Analog peripherals with continuous depth-sensing hardware offer sub-millimetre actuation precision, yet their firmware often relies on static thresholds that ignore per-user biomechanical variance and degrade under neuromotor fatigue. This thesis addresses that gap by designing an end-to-end click-sensitivity recommendation pipeline for Haptic Inductive Trigger System (HITS) devices, using telemetry streamed from the mouse in order to recommend personalized Actuation Point (AP) and Rapid Trigger (RT) settings. The system makes three contributions: (1) a supervised labeling workflow that first generates frame-level labels from algorithmic criteria (depth geometry, speed, and acceleration thresholds) and then iteratively improves those labels through model-assisted refinement; (2) a four-class temporal intent-detection model---supporting Random Forest, Gradient Boosted Trees, and a dilated residual fully-convolutional network---that combines digital signal preprocessing, class-imbalance-aware sample selection, and context-rich features to identify make-onset, click-hold, and break-onset phases from high-frequency telemetry; and (3) a joint CMA-ES optimizer that simulates the firmware click state machine frame-by-frame and finds Pareto-optimal (AP, RT) configurations that reduce actuation latency while maximizing click reliability through explicit constraints on missed clicks and unintended actuations. Together, these components form a practical recommendation workflow from raw HITS telemetry to interpretable parameter recommendations for click sensitivity tuning.
+Analog peripherals with continuous depth-sensing hardware offer sub-millimetre actuation precision, yet their firmware often relies on static thresholds that ignore per-user biomechanical variance and degrade under neuromotor fatigue. This thesis addresses that gap by designing an end-to-end click-sensitivity recommendation pipeline for Haptic Inductive Trigger System (HITS) devices, using telemetry streamed from the mouse in order to recommend personalized Actuation Point (AP) and Rapid Trigger (RT) settings. The system makes three contributions: (1) a supervised labeling workflow that first generates frame-level labels from algorithmic criteria (depth geometry, speed, and acceleration thresholds) and then iteratively improves those labels through model-assisted refinement; (2) a four-class temporal intent-detection model---supporting Random Forest, Gradient Boosted Trees, and a dilated residual fully-convolutional network---that combines digital signal preprocessing, class-imbalance-aware sample selection, and context-rich features to identify make-onset, click-hold, and break-onset phases from high-frequency telemetry; and (3) a firmware-faithful threshold optimizer that exhaustively evaluates the discrete (AP, RT) grid via a Rapid Trigger FSM simulator, returning the minimum-loss configuration and a Pareto frontier over detection rate and timing accuracy, replacing manual threshold tuning with per-user data-driven calibration. Together, these components form a practical recommendation workflow from raw HITS telemetry to interpretable parameter recommendations for click sensitivity tuning.
 \end{abstract}
 
 \clearpage
