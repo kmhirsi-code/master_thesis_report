@@ -69,12 +69,36 @@ partially address this, but a formal inter-annotator agreement study was not
 conducted; the reported metrics therefore include an irreducible component of
 label noise.
 
-\paragraph{Missing ablation evidence.}
-Channel-ablation experiments for the RF (isolating the contribution of each kinematic
-derivative channel) and soft-label ablation experiments for the GBT (comparing hard,
-symmetric, and asymmetric targets) were not completed within the scope of this thesis.
-These experiments would directly validate two design contributions and remain as
-open verification items.
+\paragraph{FCN hyperparameter underexploration.}
+The dilated residual FCN was trained for only 16--17 epochs with a fixed
+hyperparameter set due to the cost of CPU-only training (\textasciitilde45 minutes per
+run). No systematic search over architecture depth, dropout rate, learning rate
+schedule, or number of dilation stages was performed. The observed LOPO collapse
+($0.597 \pm 0.174$) may therefore reflect a poorly tuned model rather than a
+fundamental architectural limitation. A GPU-accelerated Optuna sweep over the FCN's
+hyperparameter space, combined with a larger right-button corpus, is the most likely
+path to closing the performance gap with the Random Forest.
+
+\paragraph{Absence of session-level temporal context.}
+All three architectures operate on a local window of at most 100\,ms of context
+(24-frame window plus 10 context probes). The Random Forest has no access to
+session-level dynamics: the current click's depth profile is evaluated in isolation
+from the cumulative fatigue drift, the inter-click tempo, or the running statistics
+of the session so far. Biomechanical research suggests that finger press depth and
+velocity evolve systematically over extended play sessions, and that click intent
+signatures cluster differently at the start versus end of a 40-minute session.
+A classifier that ingests global session features --- session elapsed time, running
+mean of the resting drift channel, recent inter-click interval statistics --- would
+be better equipped to distinguish intent from noise as fatigue accumulates.
+
+\paragraph{Binary click-matching criterion.}
+The overlap-constrained matching used throughout evaluation classifies each
+(predicted, ground-truth) pair as a binary hit or miss based on a 50\,\%
+Jaccard overlap threshold. This treats a prediction that overlaps at 51\,\% the
+same as a perfect overlap. A graded similarity metric --- such as a linear IoU
+score or a duration-error penalty --- would provide a more informative picture of
+where the boundary errors concentrate and would allow distinguishing a nearly
+correct prediction from a completely wrong one.
 
 \section{Future Work}
 \label{sec:conclusion-fw}
@@ -99,11 +123,37 @@ a single universal model is feasible or per-device fine-tuning is required.  The
 game-genre effect (FPS vs.\ MOBA click patterns, as observed in the PolyLAN dataset)
 is also worth modelling explicitly to produce genre-aware recommendations.
 
-\paragraph{Ablation and soft-label validation.}
-Completing the channel-ablation and GBT soft-label ablation experiments would
-quantify the individual contribution of each kinematic feature group and confirm
-that asymmetric split-normal Gaussian targets measurably outperform symmetric or
-hard-label alternatives, directly validating two thesis contributions.
+\paragraph{Session-aware global feature extraction.}
+The most impactful architectural extension for the Random Forest would be to
+append session-level summary features to each per-frame feature vector:
+cumulative click count, running mean and variance of the resting-drift channel,
+recent inter-click interval (a proxy for play tempo and arousal), and a fatigue
+indicator derived from the slow drift of the resting depth baseline over the
+session. These features would allow the model to adapt its decision boundary as
+both the hardware signal and the user's neuromuscular state drift across a
+40-minute session, addressing the absence of long-range temporal context that
+the probe ablation identified as the primary bottleneck.
+
+\paragraph{Two-stage cascade with boundary refinement.}
+The current pipeline treats detection and boundary placement as a single
+classification step. A two-stage architecture would separate these concerns:
+Stage~1 uses the existing RF (fast, reliable at detecting click events) to produce
+candidate click intervals with loose boundaries; Stage~2 applies a lightweight
+boundary-refinement model --- for example, a shallow recurrent network or a
+small attention block --- that takes a narrow context window around each candidate
+boundary and emits a sub-frame corrected onset time. The Stage~2 model could be
+trained on residuals from the Stage~1 predictions, focusing its capacity entirely
+on the hard disambiguation cases near onset boundaries.
+
+\paragraph{FCN with systematic hyperparameter search.}
+With GPU acceleration and a larger corpus (achievable by extending collection
+to additional hardware platforms or broader user populations), a full Optuna sweep
+over the FCN's architecture and training hyperparameters would determine whether
+the left-channel performance gap is closeable. The probe ablation finding --- that
+the RF's 100\,ms probe window captures most of the available local context ---
+suggests that the FCN's 3\,s receptive field advantage is currently nullified by
+data sparsity rather than by an architectural mismatch, making data expansion the
+higher-leverage investment.
 
 \paragraph{User perception study.}
 An end-to-end perceptual study --- presenting participants with their static-default

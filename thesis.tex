@@ -19,6 +19,7 @@
 \pgfplotsset{compat=1.18}
 \usepgfplotslibrary{fillbetween}
 \usetikzlibrary{fillbetween}
+\input{chapters/figures/fig-pgf-styles}
 \usepackage{placeins}
 \usepackage{tikz}
 \usepackage{ragged2e}
@@ -67,7 +68,39 @@ On a more personal note, I am deeply grateful to my partner, Sophia, for the pat
 \makeacks
 
 \begin{abstract}
-Analog peripherals with continuous depth-sensing hardware offer sub-millimetre actuation precision, yet their firmware often relies on static thresholds that ignore per-user biomechanical variance and degrade under neuromotor fatigue. This thesis addresses that gap by designing an end-to-end click-sensitivity recommendation pipeline for Haptic Inductive Trigger System (HITS) devices, using telemetry streamed from the mouse in order to recommend personalized Actuation Point (AP) and Rapid Trigger (RT) settings. The system makes three contributions: (1) a supervised labeling workflow that first generates frame-level labels from algorithmic criteria (depth geometry, speed, and acceleration thresholds) and then iteratively improves those labels through model-assisted refinement; (2) a four-class temporal intent-detection model---supporting Random Forest, Gradient Boosted Trees, and a dilated residual fully-convolutional network---that combines digital signal preprocessing, class-imbalance-aware sample selection, and context-rich features to identify make-onset, click-hold, and break-onset phases from high-frequency telemetry; and (3) a firmware-faithful threshold optimizer that exhaustively evaluates the discrete (AP, RT) grid via a Rapid Trigger FSM simulator, returning the minimum-loss configuration and a Pareto frontier over detection rate and timing accuracy, replacing manual threshold tuning with per-user data-driven calibration. Together, these components form a practical recommendation workflow from raw HITS telemetry to interpretable parameter recommendations for click sensitivity tuning.
+Analog peripherals with continuous depth-sensing hardware offer sub-millimetre
+actuation precision, yet their firmware often relies on static thresholds that
+ignore per-user biomechanical variance and degrade under neuromotor fatigue.
+This thesis addresses that gap by designing an end-to-end click-sensitivity
+recommendation pipeline for Haptic Inductive Trigger System (HITS) devices,
+evaluated on a corpus of 132 annotated recordings from 39 participants
+($\approx$3.4 hours of 1\,kHz telemetry).
+
+The system makes three contributions.
+(1)~A supervised labeling workflow that bootstraps frame-level annotations from
+algorithmic criteria and iteratively improves them through model-assisted
+refinement; the heuristic alone achieves a deployment F1 of only 0.373,
+confirming that human review is essential for the firmware-unregistered and
+noise-confounded cases that are most informative for model training.
+(2)~A four-class temporal intent-detection model supporting three architectures:
+a Random Forest that achieves a deployment F1 of 0.967 on the left channel
+(LOPO mean $0.921 \pm 0.024$) with make- and break-boundary bias under
+1.5\,ms, a Gradient Boosted Trees variant with asymmetric soft-label targets
+encoding the directional cost asymmetry of early versus late onset detection,
+and a dilated residual FCN with a 3\,060-frame receptive field whose
+cross-participant generalisation collapses to $0.597 \pm 0.174$ on the
+data-scarce right-button corpus, motivating larger collection campaigns.
+A probe ablation reveals that 10 raw depth samples at $\pm$10\,ms offsets
+contribute $+2.17\%$ deployment F1 --- three times the combined gain of all
+explicit kinematic derivative channels ($+0.68\%$), indicating that probe
+range and density are the primary levers for RF improvement.
+(3)~A firmware-faithful threshold optimizer that exhaustively evaluates the
+discrete (AP, RT) grid via a Rapid Trigger FSM simulator. Across 238
+channel-records the optimizer reduces mean make latency from 31.2\,ms to
+14.4\,ms~--- a 16.8\,ms improvement spanning $\approx$1.5 perceptual
+just-noticeable differences~--- and increases the true-positive detection
+rate from 90.1\,\% to 95.0\,\% (Wilcoxon signed-rank $W=0$, $n=238$,
+$p\ll 0.001$), confirming that no session benefits from the factory default.
 \end{abstract}
 
 \clearpage

@@ -104,88 +104,9 @@ The parameter optimizer is implemented as a standalone Rust service that communi
 
 The core of the service is a frame-accurate simulation of firmware trigger logic, illustrated in Figures~\ref{fig:fsm_nort} and~\ref{fig:fsm_rt}.
 
-\begin{figure*}[htbp]
-\centering
-\scalebox{0.8}{%
-\begin{tikzpicture}[
-  font=\small\sffamily,
-  st/.style={circle, draw=black!40, line width=0.7pt, minimum size=1.3cm, align=center, font=\small\bfseries\sffamily},
-  sBG/.style={st, fill=gray!45, text=black},
-  sMk/.style={st, fill=red!65, text=white},
-  sHo/.style={st, fill=blue!55, text=white},
-  sBr/.style={st, fill=green!55!black!80, text=white},
-  arr/.style={-{Stealth[length=2.5mm,width=1.5mm]}, thick, black!70},
-  lbl/.style={font=\scriptsize\sffamily, fill=white, inner sep=1.5pt, text=black!65}
-]
-\node[sBG] (bg)   at (0,0)   {BG};
-\node[sMk] (make) at (3.2,0) {MAKE};
-\node[sHo] (hold) at (6.4,0) {HOLD};
-\node[sBr] (brk)  at (9.6,0) {BREAK};
+\input{chapters/figures/fig-fsm-nort}
 
-\draw[arr] (-1.2,0) -- (bg);
-\draw[arr] (bg)   -- node[lbl,above]{$a > \theta_{\text{make}}$} (make);
-\draw[arr] (make) -- (hold);
-\draw[arr] (hold) -- node[lbl,above]{$a < \theta_{\text{make}}$} (brk);
-\draw[arr] (brk.south) to[out=-40,in=-140,looseness=0.4] (bg.south);
-
-\node[font=\scriptsize\itshape,text=black!55] at (4.8,-1.85)
-  {$^*a$ = analog depth value at frame $t$};
-\end{tikzpicture}}
-\caption{Simple threshold (no Rapid Trigger) FSM. A Make event fires when depth crosses above $\theta_{\text{make}}$; a Break event fires when depth falls back below the same threshold. The four states correspond directly to the four classifier output classes.}
-\label{fig:fsm_nort}
-\end{figure*}
-
-\begin{figure*}[htbp]
-\centering
-\scalebox{0.8}{%
-\begin{tikzpicture}[
-  font=\small\sffamily,
-  st/.style={circle, draw=black!40, line width=0.7pt, minimum size=1.3cm, align=center, font=\small\bfseries\sffamily},
-  sBG/.style={st, fill=gray!45, text=black},
-  sMk/.style={st, fill=red!65, text=white},
-  sHo/.style={st, fill=blue!55, text=white},
-  sBrRT/.style={st, fill=green!55!black!80, text=white},
-  sBGRT/.style={st, fill=gray!35, text=black},
-  sMkRT/.style={st, fill=red!50, text=white},
-  arr/.style={-{Stealth[length=2.5mm,width=1.5mm]}, thick, black!70},
-  lbl/.style={font=\scriptsize\sffamily, fill=white, inner sep=1.5pt, text=black!65}
-]
-% Top row
-\node[sBG]    (bg)    at (0,0)      {BG};
-\node[sMk]    (make)  at (3,0)      {MAKE};
-\node[sHo]    (hold)  at (6.2,0)    {HOLD};
-\node[sBrRT]  (brkrt) at (10,0)     {\small BREAK\\[-3pt]\scriptsize(RT)};
-% Bottom row
-\node[sBGRT]  (bgrt)  at (10,-3.0)  {\small BG\\[-3pt]\scriptsize(RT)};
-\node[sMkRT]  (mkrt)  at (6.2,-1.95) {\small MAKE\\[-3pt]\scriptsize(RT)};
-
-% Initial arrow
-\draw[arr] (-1.2,0) -- (bg);
-
-% Top transitions
-\draw[arr] (bg)   -- node[lbl,above]{$a > \theta_{\text{make}}$} (make);
-\draw[arr] (make) -- (hold);
-\draw[arr] (hold) -- node[lbl,above,align=center]
-  {$a < \theta_{\text{make}}$\\$a < \mathrm{peak} - \mathrm{RT}$} (brkrt);
-
-% Vertical: BREAK(RT) → BG(RT)
-\draw[arr] (brkrt) -- node[lbl,right]{$a = 0$} (bgrt);
-
-% Bottom: BG(RT) → MAKE(RT)
-\draw[arr] (bgrt) -- node[lbl,below]{$a > \mathrm{trough} + \mathrm{RT}$} (mkrt.east);
-
-% MAKE(RT) → HOLD
-\draw[arr] (mkrt) -- (hold);
-
-% BG(RT) full reset → BG
-\draw[arr] (bgrt.west) to[out=180,in=-90,looseness=0.55] (bg.south);
-
-\node[font=\scriptsize\itshape,text=black!55] at (5,-3.65)
-  {$^*a$ = analog depth value at frame $t$};
-\end{tikzpicture}}
-\caption{Rapid Trigger (RT) FSM. Once pressed, the button releases when depth drops by the RT sensitivity below the last observed peak. From the RT-released state the button re-actuates when depth rises above the last trough by the RT sensitivity, producing another Make onset; it fully resets to idle when depth returns to zero.}
-\label{fig:fsm_rt}
-\end{figure*}
+\input{chapters/figures/fig-fsm-rt}
 
 The deployed optimization path uses depth for both make and break channels, with candidate thresholds $(T_m, T_r)$ where $T_m$ is Actuation Point and $T_r$ is Rapid Trigger sensitivity. In this path, the simulator runs a 3-state FSM (Idle $\rightarrow$ Pressed $\rightarrow$ RT-Released):
 

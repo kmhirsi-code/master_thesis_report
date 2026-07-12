@@ -1,0 +1,70 @@
+\begin{figure*}[htbp]
+\centering
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\scriptsize\textbf{(a) Make TP: 2-click window, both correctly tracked}}
+\begin{tikzpicture}\begin{axis}[evalsmp]
+\addplot[fill=blue!10, draw=none,forget plot] coordinates{(0,0)(24,0)(24,1.08)(0,1.08)}--cycle;
+\addplot[fill=green!12,draw=none,forget plot] coordinates{(24,0)(28,0)(28,1.08)(24,1.08)}--cycle;
+\addplot[fill=red!18, draw=none,forget plot] coordinates{(64,0)(68,0)(68,1.08)(64,1.08)}--cycle;
+\addplot[fill=blue!10, draw=none,forget plot] coordinates{(68,0)(97,0)(97,1.08)(68,1.08)}--cycle;
+\addplot[fill=green!12,draw=none,forget plot] coordinates{(97,0)(101,0)(101,1.08)(97,1.08)}--cycle;
+\addplot[blue!60] table[x=frame,y=depth,col sep=space]{chapters/figures/data/sample_make0.dat};
+\addplot[orange!80] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_make0.dat};
+\addplot[green!65,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_make0.dat};
+\end{axis}\end{tikzpicture}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\scriptsize\textbf{(b) Break TP: BG$\to$Make$\to$Hold$\to$Break$\to$BG}}
+\begin{tikzpicture}\begin{axis}[evalsmp]
+\addplot[fill=red!18, draw=none,forget plot] coordinates{(1,0)(6,0)(6,1.08)(1,1.08)}--cycle;
+\addplot[fill=blue!10, draw=none,forget plot] coordinates{(6,0)(63,0)(63,1.08)(6,1.08)}--cycle;
+\addplot[fill=green!12,draw=none,forget plot] coordinates{(63,0)(68,0)(68,1.08)(63,1.08)}--cycle;
+\addplot[blue!60] table[x=frame,y=depth,col sep=space]{chapters/figures/data/sample_break0.dat};
+\addplot[orange!80] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_break0.dat};
+\addplot[green!65,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_break0.dat};
+\end{axis}\end{tikzpicture}
+\end{minipage}
+
+\vspace{2pt}
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\scriptsize\textbf{(c) Make: 1\,ms early detection (annotated at frame 65)}}
+\begin{tikzpicture}\begin{axis}[evalsmp]
+\addplot[fill=blue!10, draw=none,forget plot] coordinates{(0,0)(4,0)(4,1.08)(0,1.08)}--cycle;
+\addplot[fill=green!12,draw=none,forget plot] coordinates{(4,0)(8,0)(8,1.08)(4,1.08)}--cycle;
+\addplot[fill=red!18, draw=none,forget plot] coordinates{(65,0)(69,0)(69,1.08)(65,1.08)}--cycle;
+\addplot[fill=blue!10, draw=none,forget plot] coordinates{(69,0)(118,0)(118,1.08)(69,1.08)}--cycle;
+\addplot[fill=green!12,draw=none,forget plot] coordinates{(118,0)(122,0)(122,1.08)(118,1.08)}--cycle;
+\addplot[blue!60] table[x=frame,y=depth,col sep=space]{chapters/figures/data/sample_make1.dat};
+\addplot[orange!80] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_make1.dat};
+\addplot[green!65,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_make1.dat};
+\end{axis}\end{tikzpicture}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\centering{\scriptsize\textbf{(d) Break: 2\,ms early detection (annotated at frame 66)}}
+\begin{tikzpicture}\begin{axis}[evalsmp]
+\addplot[fill=blue!10, draw=none,forget plot] coordinates{(0,0)(66,0)(66,1.08)(0,1.08)}--cycle;
+\addplot[fill=green!12,draw=none,forget plot] coordinates{(66,0)(70,0)(70,1.08)(66,1.08)}--cycle;
+\addplot[fill=red!18, draw=none,forget plot] coordinates{(123,0)(127,0)(127,1.08)(123,1.08)}--cycle;
+\addplot[blue!60] table[x=frame,y=depth,col sep=space]{chapters/figures/data/sample_break1.dat};
+\addplot[orange!80] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_break1.dat};
+\addplot[green!65,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_break1.dat};
+\end{axis}\end{tikzpicture}
+\end{minipage}
+\caption{Correct and near-correct outputs (RF-L test set). Shading:
+\colorbox{red!18}{\strut Make}, \colorbox{blue!10}{\strut Hold},
+\colorbox{green!12}{\strut Break}; blue = depth (0\,=\,rest, 1\,=\,pressed);
+orange = make prob.; green dashed = break prob.
+\textbf{(a)} The model tracks two consecutive click events across a 128\,ms
+window: break probability peaks correctly at frames 23--27 (prior click) and
+again at frames 97--100 (new click); make probability peaks at frame 64 (new
+click onset).
+\textbf{(b)} Clean click cycle: depth rises steeply during the make phase,
+holds at maximum, then falls at the break onset; both probabilities peak sharply
+at the correct frames.
+\textbf{(c)} The model fires make probability above 0.5 at frame 58, seven
+frames before the annotated onset at frame 65; the peak (0.988) occurs at
+frame 64 --- 1\,ms before the annotation and within the $\pm 4$\,ms tolerance.
+\textbf{(d)} Break probability peaks at frame 64 (0.995), two frames before
+the annotated break onset at frame 66 --- again within tolerance.}
+\label{fig:samples-correct}
+\end{figure*}

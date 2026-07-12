@@ -1,0 +1,44 @@
+\begin{figure*}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar=3pt, bar width=18pt,
+  ylabel={Accuracy generalisation gap (\%)},
+  ylabel style={align=center},
+  xtick={1,2,3}, xticklabels={Random Forest, GBT, FCN},
+  xticklabel style={font=\small},
+  ymajorgrids=true, grid style={dashed, gray!30},
+  ymin=-9, ymax=3.5,
+  width=0.72\linewidth, height=5.5cm,
+  enlarge x limits=0.3,
+  tick label style={font=\small}, label style={font=\small},
+  axis x line*=bottom,
+  extra y ticks={0},
+  extra y tick style={grid=major, grid style={black!60, thick}},
+  nodes near coords={\pgfmathprintnumber[fixed,precision=1,showpos]%
+    {\pgfplotspointmeta}\%},
+  nodes near coords style={font=\scriptsize},
+  legend style={at={(0.02,0.02)}, anchor=south west, font=\small},
+]
+\addplot[fill=blue!55, draw=blue!70]
+  table[x expr=\coordindex+1, y=L_gap, col sep=space]
+    {chapters/figures/data/gen_gap.dat};
+\addplot[fill=orange!55, draw=orange!70]
+  table[x expr=\coordindex+1, y=R_gap, col sep=space]
+    {chapters/figures/data/gen_gap.dat};
+\legend{Left channel, Right channel}
+\end{axis}
+\end{tikzpicture}
+\caption{Accuracy-based generalisation gap $(a_\text{train} - a_\text{test}) /
+a_\text{train} \times 100\%$ for all six models, grouped by architecture.
+A positive value means the model achieves higher accuracy on the training set
+than on the held-out test set (classic overfitting); a negative value means the
+test accuracy exceeds training accuracy (strong regularisation or an easier test
+partition). All gaps are within $\pm 6\%$, confirming that none of the
+architectures overfits severely at the accuracy level. The right-channel FCN
+shows the largest negative gap ($-5.3\%$), consistent with strong dropout
+regularisation on a small corpus. GBT and FCN left-channel models exhibit small
+positive gaps ($<1\%$), indicating marginal overfitting on the more abundant
+left-button training set.}
+\label{fig:gen-gap}
+\end{figure*}

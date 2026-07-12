@@ -1,0 +1,30 @@
+\begin{figure*}[htbp]
+\centering
+\scalebox{0.8}{%
+\begin{tikzpicture}[
+  font=\small\sffamily,
+  st/.style={circle, draw=black!40, line width=0.7pt, minimum size=1.3cm, align=center, font=\small\bfseries\sffamily},
+  sBG/.style={st, fill=gray!45, text=black},
+  sMk/.style={st, fill=red!65, text=white},
+  sHo/.style={st, fill=blue!55, text=white},
+  sBr/.style={st, fill=green!55!black!80, text=white},
+  arr/.style={-{Stealth[length=2.5mm,width=1.5mm]}, thick, black!70},
+  lbl/.style={font=\scriptsize\sffamily, fill=white, inner sep=1.5pt, text=black!65}
+]
+\node[sBG] (bg)   at (0,0)   {BG};
+\node[sMk] (make) at (3.2,0) {MAKE};
+\node[sHo] (hold) at (6.4,0) {HOLD};
+\node[sBr] (brk)  at (9.6,0) {BREAK};
+
+\draw[arr] (-1.2,0) -- (bg);
+\draw[arr] (bg)   -- node[lbl,above]{$a > \theta_{\text{make}}$} (make);
+\draw[arr] (make) -- (hold);
+\draw[arr] (hold) -- node[lbl,above]{$a < \theta_{\text{make}}$} (brk);
+\draw[arr] (brk.south) to[out=-40,in=-140,looseness=0.4] (bg.south);
+
+\node[font=\scriptsize\itshape,text=black!55] at (4.8,-1.85)
+  {$^*a$ = analog depth value at frame $t$};
+\end{tikzpicture}}
+\caption{Simple threshold (no Rapid Trigger) FSM. A Make event fires when depth crosses above $\theta_{\text{make}}$; a Break event fires when depth falls back below the same threshold. The four states correspond directly to the four classifier output classes.}
+\label{fig:fsm_nort}
+\end{figure*}

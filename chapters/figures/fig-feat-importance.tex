@@ -1,0 +1,44 @@
+\begin{figure*}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar stacked,
+  bar width=22pt,
+  ylabel={Feature importance (\%)},
+  xtick={1,2,3,4,5},
+  xticklabels={No probes, {+Probes}, {+Velocity}, {+Accel}, {+Jerk}},
+  xticklabel style={font=\small},
+  ymin=0, ymax=103,
+  ymajorgrids=true, grid style={dashed,gray!30},
+  width=0.75\linewidth, height=5.5cm,
+  enlarge x limits=0.15,
+  legend style={at={(0.98,0.5)},anchor=east,font=\small, cells={anchor=west}},
+  tick label style={font=\small}, label style={font=\small},
+]
+\addplot[fill=blue!55,  draw=blue!70]
+  table[x expr=\coordindex+1, y=analog, col sep=space]
+    {chapters/figures/data/feat_importance.dat};
+\addplot[fill=cyan!50,  draw=cyan!65]
+  table[x expr=\coordindex+1, y=digital, col sep=space]
+    {chapters/figures/data/feat_importance.dat};
+\addplot[fill=orange!60,draw=orange!80]
+  table[x expr=\coordindex+1, y=velocity, col sep=space]
+    {chapters/figures/data/feat_importance.dat};
+\addplot[fill=red!45,   draw=red!65]
+  table[x expr=\coordindex+1, y=accel, col sep=space]
+    {chapters/figures/data/feat_importance.dat};
+\addplot[fill=purple!45,draw=purple!65]
+  table[x expr=\coordindex+1, y=jerk, col sep=space]
+    {chapters/figures/data/feat_importance.dat};
+\legend{Analog depth (incl.\ probes), Digital, Velocity, Acceleration, Jerk}
+\end{axis}
+\end{tikzpicture}
+\caption{RF-L feature importance by channel group at each ablation step.
+\texttt{analog\_L} (blue) subsumes both window statistics and context probe values;
+its share decreases as kinematic channels absorb part of the signal but never falls
+below 31\,\%. \texttt{digital\_L} (cyan) is stable across all configurations,
+reflecting the independent predictive value of the digital press event.  All kinematic
+channels together account for at most 50\,\% of total importance in the full
+configuration.}
+\label{fig:feat-importance}
+\end{figure*}
