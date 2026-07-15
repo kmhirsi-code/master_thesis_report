@@ -23,9 +23,12 @@
 \legend{RF-L, RF-R, GBT-L, GBT-R}
 \end{axis}
 \end{tikzpicture}
-\caption{Per-fold LOPO deployment F1 for the four tree-based model variants.
-  Fold~5 is consistently the lowest across all models, suggesting the held-out
-  participant group in that fold has an atypically challenging click profile.
+\caption{Per-fold grouped cross-validation deployment F1 for the four
+  tree-based model variants. The held-out participant group in Fold~4 yields
+  the lowest F1 for both L-channel models, suggesting an atypically
+  challenging click profile; since folds are formed by random participant
+  assignment, this reflects the specific composition of that fold rather than
+  any systematic ordering.
   The L-channel models outperform their R-channel counterparts in every fold,
   reflecting the larger left-button training corpus.}
 \label{fig:lopo-folds}

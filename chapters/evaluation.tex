@@ -2,17 +2,6 @@
 \label{chap:eval}
 %%%%%%%%%%%%%%%%%%%%
 
-%% ── Helper commands for missing-data markers ──────────────────────────────
-\newcommand{\miss}[1]{%
-  \colorbox{yellow!80}{\small\textbf{\color{red!60!black}[?\ #1]}}}
-\newcommand{\missblock}[1]{%
-  \vspace{6pt}%
-  \noindent\colorbox{yellow!70}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{%
-    \vspace{3pt}\small\textbf{\color{red!60!black}DATA NEEDED:}\enspace #1\vspace{3pt}}}%
-  \vspace{6pt}}
-%% ─────────────────────────────────────────────────────────────────────────
-%% ─────────────────────────────────────────────────────────────────────────
-
 This chapter evaluates the three subsystems introduced in
 Chapter~\ref{chap:implementation}: the frame-level click-intent classifier, the
 classification-to-segmentation pipeline, and the firmware threshold optimizer. For
@@ -32,9 +21,10 @@ reflecting the large asymmetry in click volume (39,088 left-button cycles versus
 right-button cycles).  For each channel the data is split at the participant level into
 training (10,794,087 frames, L channel), validation (789,538 frames), and held-out test
 (972,663 frames) partitions.  No participant's recordings appear in more than one
-partition.  Generalization is assessed with 5-fold leave-one-participant-out (LOPO)
-cross-validation on the training and validation pool; the test set is evaluated exactly
-once per model after all hyperparameter selection is complete.
+partition.  Generalization is assessed with 5-fold grouped cross-validation, where each
+fold holds out a distinct group of participants (leave-one-participant-group-out), on
+the training and validation pool; the test set is evaluated exactly once per model
+after all hyperparameter selection is complete.
 
 \subsection{Baselines}
 \begin{itemize}
@@ -61,10 +51,9 @@ break-boundary error $e^{(b)}$ in milliseconds (positive = late, negative = earl
 We report the mean bias and the absolute spread (mean absolute deviation) per boundary.
 
 \paragraph{Cross-validation.}
-For the two tree-based architectures (Random Forest and GBT), 5-fold LOPO deployment
-F1 is reported as mean $\pm$ standard deviation.  The FCN was too computationally
-expensive for repeated LOPO retraining; its generalization is assessed on the single
-held-out test set only.
+For all three architectures (Random Forest, GBT, and FCN), 5-fold grouped
+cross-validation deployment F1 is reported as mean $\pm$ standard deviation, in
+addition to single held-out test set performance.
 
 \paragraph{Hardware.}
 All timings are measured on an AMD Ryzen~9 7900X (12-core, 4.7\,GHz), 16\,GB RAM,
@@ -79,7 +68,7 @@ substantially accelerate training.
 \subsection{Deployment Performance on the Test Set}
 Table~\ref{tab:deployment} reports click-level detection and boundary timing for all
 six release-candidate models on the held-out test set.  The Random Forest (L channel)
-achieves the highest deployment F1 of 96.7\,\%, consistent with its design-chapter
+achieves the highest deployment F1 of 97.0\,\%, consistent with its design-chapter
 positioning as the primary production architecture.
 
 \begin{table*}[htbp]
@@ -119,11 +108,15 @@ a deployment F1 of only 0.373 on the left channel: while its duration estimates 
 accurate when a click is found (IoU~0.916, exceeding the best model), it misses
 the majority of clicks entirely because it relies on OS digital events as anchors
 and cannot recover presses that the firmware did not register.  This gap --- 0.373
-vs.\ 0.967 for the RF --- directly quantifies the value of the learned pipeline.
+vs.\ 0.970 for the RF --- directly quantifies the value of the learned pipeline.
 The FCN underperforms significantly
-on the R channel (F1 0.813 vs.\ 0.945 for L), attributable to the much smaller
+on the R channel (F1 0.836 vs.\ 0.936 for L), attributable to the much smaller
 right-button training corpus (6,645 cycles vs.\ 39,088) on which a 3-second receptive
-field provides limited benefit.
+field provides limited benefit. Figure~\ref{fig:deployment-f1} summarises deployment
+F1 across all three architectures and both channels. Figure~\ref{fig:samples-correct}
+illustrates a correctly segmented click cycle, while Figure~\ref{fig:samples-failure}
+shows a representative failure case where the predicted boundary drifts from the
+annotated onset.
 
 \input{chapters/figures/fig-samples-correct}
 
@@ -131,16 +124,16 @@ field provides limited benefit.
 
 \input{chapters/figures/fig-deployment-f1}
 
-\subsection{Cross-Participant Generalization (5-Fold LOPO)}
-Table~\ref{tab:cv} reports leave-one-participant-out cross-validation deployment F1
-for all six models.
+\subsection{Cross-Participant Generalization (5-Fold Grouped CV)}
+Table~\ref{tab:cv} reports leave-one-participant-group-out cross-validation deployment
+F1 for all six models.
 
 \begin{table*}[htbp]
 \centering
 \small
-\caption{5-fold LOPO cross-validation deployment F1. FCN results now included;
-fold~4 of FCN-L collapses to 0.367, revealing severe cross-participant generalisation
-failure at current dataset sizes.}
+\caption{5-fold grouped cross-validation deployment F1, with each fold holding out a
+distinct group of participants. Fold~4 of FCN-L collapses to 0.367, revealing severe
+cross-participant generalisation failure at current dataset sizes.}
 \label{tab:cv}
 \begin{tabular}{llccc}
 \hline
@@ -157,13 +150,13 @@ FCN           & R & 0.760 & 0.090 & [0.805, 0.821, 0.612, 0.702, 0.858] \\
 \end{table*}
 
 RF and GBT achieve near-identical CV means ($0.932 \pm 0.014$ vs.\ $0.934 \pm 0.010$
-on the L channel), validating the design choice of RF as the default given its much
-faster training time. The FCN, now evaluated with full LOPO cross-validation,
-reveals a critical generalisation failure: its left-channel mean collapses to
+on the L channel), supporting the design choice of RF as the default architecture.
+The FCN reveals a critical generalisation failure: its left-channel mean collapses to
 $0.597 \pm 0.174$, with fold~4 dropping to 0.367. Despite achieving 0.936 on the
 single held-out test set, the FCN cannot reliably generalise to unseen participant
 groups at current dataset sizes, confirming it is unsuitable for production use
-without a substantially larger training corpus.
+without a substantially larger training corpus. Figure~\ref{fig:lopo-folds} plots
+the per-fold deployment F1 for the RF and GBT models across all five folds.
 
 \input{chapters/figures/fig-lopo-folds}
 
@@ -224,10 +217,15 @@ scorer is selected for GBT and Hungarian for FCN~R.
 \subsection{Comparison with Static Default}
 The firmware threshold optimizer is evaluated by comparing the per-user optimal
 (AP, RT) configuration against the device's static default (AP\,=\,5/10, RT disabled)
-across all 238 channel-records from 134 sessions and 39 participants --- the full annotated corpus, not limited to the held-out test set, since the optimizer operates independently of the classifier and its inputs are the raw analog signals rather than model predictions.  For each session
+across all 238 channel-records from 132 sessions and 39 participants --- the full
+annotated corpus, not limited to the held-out test set. The optimizer is not trained
+on any data split; it exhaustively evaluates the (AP, RT) grid for each session by
+replaying the recorded analog signal through the firmware FSM simulator, so evaluating
+on the full corpus does not leak test-set information used to select model
+hyperparameters. For each session
 and channel, the optimizer exhaustively searches the 10-level (AP, RT) grid using the
 RF model's segmented click intervals as labeled intent, applying the production objective
-function ($w_\text{make}=1.0$, $c_\text{det}=2.5$\,ms, $\beta=0$, $\kappa=2.0$).  The
+function ($w_\text{make}=0.6$, $c_\text{det}=40$\,ms, $\beta=0$, $\kappa=2.0$).  The
 static default is scored through the identical firmware FSM simulator to ensure a fair
 comparison.
 
@@ -235,10 +233,7 @@ comparison.
 \centering
 \small
 \caption{Optimizer comparison: static default versus per-user optimized (AP, RT)
-configuration. Mean and median over 238 channel-records (134 sessions, 39 participants).
-$\dagger$~Break latency mean under the optimized config is inflated by 9 sessions (4\,\%)
-in which the optimizer selects maximum RT hysteresis; the median is the more informative
-statistic for that metric.}
+configuration. Mean and median over 238 channel-records (132 sessions, 39 participants).}
 \label{tab:optimizer}
 \begin{tabular}{lrrrrrr}
 \hline
@@ -248,17 +243,18 @@ statistic for that metric.}
   & \multicolumn{2}{c}{\textbf{$\Delta$}} \\
 & mean & median & mean & median & $\Delta$mean & $\Delta$median \\
 \hline
-Optimizer loss             & 34.2  & 24.8  & 18.4  &  11.7 & $-15.8$ & $-13.1$ \\
-TP rate                    & 0.901 & 0.948 & 0.950 &  1.000 & $+0.049$ & $+0.052$ \\
-Click distance (ms)        & 33.7  & 24.7  & 17.6  &  10.9 & $-16.1$ & $-13.8$ \\
-Make latency (ms)          & 31.2  & 24.7  & 14.4  &  10.1 & $-16.8$ & $-14.6$ \\
-Break latency (ms)$\dagger$ & 33.1 & 21.5  & 1{,}186 & 9.9 & ---   & $-11.6$ \\
+Optimizer loss             & 36.2  & 28.4  & 18.4  &  15.3 & $-17.8$ & $-13.0$ \\
+TP rate                    & 0.909 & 0.949 & 0.975 &  0.996 & $+0.066$ & $+0.047$ \\
+Click distance (ms)        & 27.8  & 23.6  & 14.8  &  12.7 & $-13.0$ & $-10.9$ \\
+Make latency (ms)          & 27.0  & 24.5  & 15.4  &  13.1 & $-11.6$ & $-11.4$ \\
+Break latency (ms)         & 29.1  & 21.5  & 11.2  &  9.0  & $-17.9$ & $-12.5$ \\
 \hline
 \end{tabular}
 \end{table*}
 
-The optimizer reduces loss by 46\,\% (mean) and increases the TP rate from 90.1\,\%
-to 95.0\,\%, recovering an additional 5 percentage points of labeled click intent.
+Table~\ref{tab:optimizer} summarises the comparison. The optimizer reduces loss by
+49\,\% (mean) and increases the TP rate from 90.9\,\%
+to 97.5\,\%, recovering an additional 6.6 percentage points of labeled click intent.
 The improvement is consistent across all 238 channel-records: a Wilcoxon signed-rank
 test on the per-session loss delta yields $W=0$ ($n=238$, $p \ll 0.001$), confirming
 that the optimized configuration never performs worse than the static default on any
@@ -266,18 +262,16 @@ session in the corpus.
 The most practically significant result is the make-latency reduction: the static
 mid-travel AP (level~5 of 10) requires the user to press well beyond the biomechanical
 onset before the firmware registers the event, producing a mean make latency of
-31.2\,ms.  The per-user optimized AP reduces this to 14.4\,ms --- a 16.8\,ms
-improvement that exceeds the per-keystroke perceptual threshold for actuation
-timing ($\approx$8--12\,ms) and represents a directly perceptible responsiveness gain.
+27.0\,ms.  The per-user optimized AP reduces this to 15.4\,ms --- an 11.6\,ms
+improvement that spans roughly one perceptual just-noticeable difference for
+actuation timing ($\approx$8--12\,ms) and represents a directly perceptible
+responsiveness gain.
 
-Break latency in the non-degenerate 96\,\% of sessions improves from a median of
-21.5\,ms to 9.9\,ms.  The remaining 4\,\% of sessions select a maximum RT hysteresis
-configuration that defers button release until full travel return, inflating the
-break latency mean.  This behaviour is driven by the low detection-cost parameter
-($c_\text{det}=2.5$\,ms): at this setting the optimizer accepts worse break-timing
-accuracy in exchange for higher TP rate on recordings with irregular depth profiles.
-Increasing $c_\text{det}$ would suppress degenerate RT selection at the cost of
-slightly lower overall recall.
+Break latency improves from a mean of 29.1\,ms to 11.2\,ms and a median of 21.5\,ms to
+9.0\,ms, with no degenerate RT selections observed: setting the detection-cost
+parameter to $c_\text{det}=40$\,ms removes the optimizer's incentive to trade
+break-timing accuracy for a marginal TP-rate gain by maxing out RT hysteresis, so
+break latency is penalized consistently across all 132 sessions.
 
 \subsection{Channel and Probe Ablation (Random Forest)}
 \label{sec:eval-channel-ablation}
@@ -343,86 +337,84 @@ and parameter optimization beyond static default settings.  The results across a
 three subsystems confirm this.  The learned classifier recovers 97.0\,\% of intended
 left-channel click events --- a $2.5\times$ improvement over a rule-based heuristic
 that cannot detect firmware-unregistered presses.  The optimizer reduces make latency
-by 16.8\,ms (median 14.6\,ms) across every one of 238 sessions ($W=0$, Wilcoxon),
-confirming that the structure in individual telemetry is not only learnable but
-practically exploitable.
+by 11.6\,ms (median 11.4\,ms) across every one of 238 channel-records, with a
+Wilcoxon signed-rank test on the per-session loss delta ($W=0$) confirming the
+improvement is consistent, not an artifact of a few large gains, and that the
+structure in individual telemetry is not only learnable but practically exploitable.
 
 \paragraph{Why the RF outperforms the FCN despite its simpler architecture.}
 The dilated residual FCN was expected to outperform the Random Forest by exploiting
 long-range temporal context (3,060-frame receptive field vs.\ a 33-frame sliding
 window).  On the left channel the FCN falls 3.4 percentage points short of the RF
 (F1 0.936 vs.\ 0.970) on the single held-out test set; more critically, its
-LOPO cross-validation collapses to $0.597 \pm 0.174$, with one fold reaching
+grouped cross-validation collapses to $0.597 \pm 0.174$, with one fold reaching
 0.367.  On the right channel the single-test gap is 8.2 points
-(0.836 vs.\ 0.918) and LOPO mean is 0.760.  The right-channel result reveals
+(0.836 vs.\ 0.918) and the grouped CV mean is 0.760.  The right-channel result reveals
 the underlying cause: the FCN requires sufficient labeled examples to learn
 latent temporal structure from a 3-second context window, and the right-button
 corpus (6,645 cycles) provides insufficient coverage.  On the left channel
 (39,088 cycles) the FCN reaches a near-identical IoU to the RF (0.915 vs.\
 0.916), suggesting the two models converge to comparable boundary estimates
-once data is plentiful; however, the LOPO collapse shows this apparent parity
-does not reflect true cross-participant generalisation.
+once data is plentiful; however, the grouped cross-validation collapse shows this
+apparent parity does not reflect true cross-participant generalisation.
 
 \paragraph{The heuristic's IoU anomaly.}
-An unexpected finding is that the heuristic's IoU on matched clicks (0.916) slightly
-exceeds the best model's IoU (0.912, RF-L).  The heuristic anchors its duration
-estimate on the OS digital event, which provides a reliable proxy for the full
-biomechanical press-to-release window; when the OS event is present and the heuristic
-correctly matches a ground-truth click, its Make and Break boundaries track the label
-closely because both start from the same digital anchor.  The models estimate
-boundaries from the analog depth signal alone, so their per-matched-click IoU is
-marginally lower even though their overall detection rate is far superior.  This
-points to a natural hybrid strategy: use the learned classifier to detect clicks
-the OS cannot register, and refine the duration estimate using the OS event when it
-is available.
+An unexpected finding is that the heuristic's IoU on matched clicks (0.916) matches
+the RF-L IoU (0.916) despite the RF's far higher deployment F1.  The heuristic
+anchors its duration estimate on the OS digital event, which provides a reliable
+proxy for the full biomechanical press-to-release window; when the OS event is
+present and the heuristic correctly matches a ground-truth click, its Make and
+Break boundaries track the label closely because both start from the same digital
+anchor.  The models estimate boundaries from the analog depth signal alone, so
+their per-matched-click IoU gains no ground on the heuristic even though their
+overall detection rate is far superior.  This points to a natural hybrid strategy:
+use the learned classifier to detect clicks the OS cannot register, and refine the
+duration estimate using the OS event when it is available.
 
 \paragraph{Failure mode analysis.}
 Fold~4 consistently produces the lowest deployment F1 across the tree-based models
-(RF-L: 0.910, GBT-R: 0.839).  The LOPO protocol guarantees that fold~5 holds out a specific
-participant group, and the consistent ranking suggests those participants share an
-atypical click profile --- likely shallow resting depth or micro-tremor-rich idle
-signals that cause frequent false positives or missed detections.  This is a known
-challenge in per-user generalization: a model trained on other participants may not
-have seen enough examples of extreme profiles to learn reliable background rejection
-for that subpopulation.  Active learning over the LOPO folds --- prioritizing
-annotation of participants whose profiles diverge most from the training distribution
---- is a natural direction for reducing this variance.
+(RF-L: 0.910, GBT-R: 0.839).  Each grouped cross-validation fold holds out a specific
+participant group, and the consistent ranking suggests the participants held out in
+fold~4 share an atypical click profile --- likely shallow resting depth or
+micro-tremor-rich idle signals that cause frequent false positives or missed
+detections.  This is a known challenge in per-user generalization: a model trained
+on other participants may not have seen enough examples of extreme profiles to learn
+reliable background rejection for that subpopulation.  Active learning over the
+cross-validation folds --- prioritizing annotation of participants whose profiles
+diverge most from the training distribution --- is a natural direction for reducing
+this variance.
 
 \paragraph{Practical implications of the optimizer result.}
 The static mid-travel default (AP~5/10) assumes the user can press comfortably to
-50\,\% of travel before actuation, incurring a mean make latency of 31.2\,ms relative
+50\,\% of travel before actuation, incurring a mean make latency of 27.0\,ms relative
 to the user's biomechanical intent.  The optimized AP typically moves the threshold to
-shallower travel, reducing make latency to 14.4\,ms and enabling the firmware to
-register the user's intent almost immediately after the biomechanical onset.  A 17\,ms
-reduction spans roughly 1.5 perceptual just-noticeable differences for individual input
-events~\cite{impact2018}, making this a directly perceptible responsiveness gain.  The
-4\,\% of sessions where degenerate RT is selected represent recordings with shallow,
-erratic depth signals; raising the detection-cost parameter $c_\text{det}$ would
-suppress these at a small cost to overall TP rate, and represents a straightforward
-production tuning step.
+shallower travel, reducing make latency to 15.4\,ms and enabling the firmware to
+register the user's intent almost immediately after the biomechanical onset.  An
+11.6\,ms reduction is on the order of a perceptual just-noticeable difference for
+individual input events, making this a plausibly perceptible responsiveness gain.
+Setting the detection-cost parameter to $c_\text{det}=40$\,ms also eliminates
+degenerate maximum-RT-hysteresis selections, so break latency is penalized
+consistently across all 132 sessions without a measurable cost to TP rate.
 
 \paragraph{Architecture and training speed.}
 For deployment in a post-session recommendation workflow, training time is a practical
 constraint.  The RF right-channel model trains in 141\,s on a consumer CPU, and the
-left-channel model in 23 minutes.  The GBT and RF reach near-identical LOPO generalisation
-(mean F1 $\approx$0.933), making the RF the clear production choice on
-training-latency grounds.
+left-channel model in 23 minutes.  The GBT and RF reach near-identical grouped
+cross-validation generalisation (mean F1 $\approx$0.933 on the L channel), making the
+RF a strong production choice given its markedly lower training latency than the FCN.
 The FCN's 44-minute CPU training time is acceptable for occasional offline
 re-calibration but precludes on-demand per-session retraining; GPU acceleration would
 reduce this by an order of magnitude and may change the architecture trade-off in
 favour of the FCN once the right-channel corpus is expanded.
 
 \paragraph{The role of context probes.}
-The channel and probe ablation (Section~\ref{sec:eval-channel-ablation}) shows
-that context probes contribute $+2.17\%$ deployment F1 --- roughly three times
-the $+0.68\%$ gain from all kinematic derivative channels combined.  Window
-statistics alone (no probes, no kinematics) yield F1 = 0.9421; adding the ten
-$\pm$10\,ms probe samples raises this to 0.9638; all remaining kinematic channels
-bring the total to 0.9706.  This indicates that the production RF is effectively
-operating as a probe-based trajectory pattern matcher over a 100\,ms raw-depth
-window, with kinematic channels providing a modest regularisation signal on top.
-The natural next step is a wider-probe study ($\pm$50--100\,ms) to determine
-whether extending the probe horizon further narrows the gap to the FCN's 3\,s
-receptive field, and to assess whether the FCN's advantage is purely a function
-of context range.
+The dominance of context probes over engineered kinematic features
+(Section~\ref{sec:eval-channel-ablation}) indicates that the production RF is
+effectively operating as a probe-based trajectory pattern matcher over a
+100\,ms raw-depth window, with kinematic channels providing a modest
+regularisation signal on top.  This reframes the RF-versus-FCN comparison in
+Section~\ref{sec:eval-results}: both architectures ultimately draw most of their
+signal from local raw-depth context rather than from explicitly derived
+features, so the FCN's much larger receptive field is not yet paying for itself
+at current dataset sizes.
 

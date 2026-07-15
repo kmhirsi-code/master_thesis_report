@@ -19,20 +19,23 @@ achieves F1~0.373, showing that human review is essential for the firmware-unreg
 and noise-confounded cases that are most informative for model training.
 
 \paragraph{Click-intent classification.}
-The Random Forest achieves a deployment F1 of 0.967 on the left channel
-(LOPO mean 0.921~$\pm$~0.024), with make- and break-boundary bias under 1.5\,ms ---
-well within the 8--12\,ms perceptual threshold.  Random Forest and Gradient Boosted
-Trees achieve identical leave-one-participant-out generalization while the RF trains
-$8\times$ faster, confirming it as the default production architecture.  The dilated
-FCN, despite a 3,060-frame receptive field, provides no measurable gain on the
-left channel and degrades on the data-scarce right channel (F1~0.813), revealing
-that large-context models require proportionally large annotated corpora.
+The Random Forest achieves a deployment F1 of 0.970 on the left channel
+(grouped cross-validation mean 0.932~$\pm$~0.014), with make- and break-boundary
+bias under 1.5\,ms --- well within the 8--12\,ms perceptual threshold.  Random
+Forest and Gradient Boosted Trees achieve near-identical grouped cross-validation
+generalization, and the RF trains substantially faster on the left channel
+(23~minutes versus the FCN's 44~minutes), confirming it as the default production
+architecture.  The dilated FCN, despite a 3,060-frame receptive field, provides
+no measurable gain on the left channel in the single-test comparison and collapses
+under grouped cross-validation on that same channel (F1~$0.597 \pm 0.174$),
+revealing that large-context models require proportionally large annotated
+corpora.
 
 \paragraph{Firmware threshold optimizer.}
-The exhaustive FSM simulator reduced optimizer loss by 46\,\% (Wilcoxon $W=0$,
-$n=238$, $p\ll 0.001$), increased the TP rate from 90.1\,\% to 95.0\,\%, and reduced
-mean make latency from 31.2\,ms to 14.4\,ms --- a 16.8\,ms improvement that spans
-roughly 1.5 perceptual just-noticeable differences for input timing, and represents a
+The exhaustive FSM simulator reduced optimizer loss by 49\,\% (Wilcoxon $W=0$,
+$n=238$, $p\ll 0.001$), increased the TP rate from 90.9\,\% to 97.5\,\%, and reduced
+mean make latency from 27.0\,ms to 15.4\,ms --- an 11.6\,ms improvement that spans
+roughly 1 perceptual just-noticeable difference for input timing, and represents a
 directly perceptible responsiveness gain available to every user without any manual
 configuration.
 
@@ -50,34 +53,28 @@ right-channel deployment.
 All data was collected on a single HITS-enabled PRO~X2 Superstrike mouse.
 Generalization to other analog input devices with different sensor resolutions,
 quantization levels, or firmware architectures has not been tested.  The
-feature-engineering pipeline (step120 depth, derivative channels) is designed to
+feature-engineering pipeline (120-level depth, derivative channels) is designed to
 be device-agnostic, but empirical transfer must be verified.
-
-\paragraph{Degenerate RT configurations.}
-The optimizer's low detection-cost parameter ($c_\text{det}=2.5$\,ms) causes 4\,\%
-of sessions to select a maximum-hysteresis RT configuration that defers button
-release until full travel return, inflating break latency to several hundred
-milliseconds.  This cost-function sensitivity must be resolved --- either by raising
-$c_\text{det}$ or by introducing a hard constraint on maximum break latency ---
-before user-facing deployment.
 
 \paragraph{Annotation ambiguity at onset boundaries.}
 The $\pm 4$\,ms onset tolerance absorbs natural annotator variability, but for
 borderline clicks at the edge of the biomechanical window the correct label boundary
-is genuinely ambiguous.  The asymmetric soft-label targets for the GBT model
-partially address this, but a formal inter-annotator agreement study was not
+is genuinely ambiguous.  The asymmetric soft-label targets implemented for the GBT
+model (Section~\ref{sec:modeling}) could partially address this, but were not used
+for the reported results, and a formal inter-annotator agreement study was not
 conducted; the reported metrics therefore include an irreducible component of
 label noise.
 
 \paragraph{FCN hyperparameter underexploration.}
 The dilated residual FCN was trained for only 16--17 epochs with a fixed
-hyperparameter set due to the cost of CPU-only training (\textasciitilde45 minutes per
+hyperparameter set due to the cost of CPU-only training (\textasciitilde44 minutes per
 run). No systematic search over architecture depth, dropout rate, learning rate
-schedule, or number of dilation stages was performed. The observed LOPO collapse
-($0.597 \pm 0.174$) may therefore reflect a poorly tuned model rather than a
-fundamental architectural limitation. A GPU-accelerated Optuna sweep over the FCN's
-hyperparameter space, combined with a larger right-button corpus, is the most likely
-path to closing the performance gap with the Random Forest.
+schedule, or number of dilation stages was performed. The observed grouped
+cross-validation collapse ($0.597 \pm 0.174$) may therefore reflect a poorly tuned
+model rather than a fundamental architectural limitation. A GPU-accelerated Optuna
+sweep over the FCN's hyperparameter space, combined with a larger right-button
+corpus, is the most likely path to closing the performance gap with the Random
+Forest.
 
 \paragraph{Absence of session-level temporal context.}
 All three architectures operate on a local window of at most 100\,ms of context
@@ -86,10 +83,10 @@ session-level dynamics: the current click's depth profile is evaluated in isolat
 from the cumulative fatigue drift, the inter-click tempo, or the running statistics
 of the session so far. Biomechanical research suggests that finger press depth and
 velocity evolve systematically over extended play sessions, and that click intent
-signatures cluster differently at the start versus end of a 40-minute session.
-A classifier that ingests global session features --- session elapsed time, running
-mean of the resting drift channel, recent inter-click interval statistics --- would
-be better equipped to distinguish intent from noise as fatigue accumulates.
+signatures cluster differently at the start versus end of a 40-minute session; a
+classifier blind to this drift cannot distinguish a genuine late-session change in
+intent from noise. Section~\ref{sec:conclusion-fw} outlines a concrete feature-level
+extension addressing this gap.
 
 \paragraph{Binary click-matching criterion.}
 The overlap-constrained matching used throughout evaluation classifies each

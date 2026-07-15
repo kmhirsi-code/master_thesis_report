@@ -55,11 +55,11 @@ viendront apr\`es.''\\
 --- Clair Obscur, Expedition 33}
 
 \acknowledgments{%
-I would like to express my sincere gratitude to Christophe Constantin, my supervisor at Logitech, for his trust, guidance, and critical perspective throughout this thesis. I am equally thankful to Yael, a close collaborator on this project, whose feedback and thoughtful challenges helped sharpen both the ideas and the direction of the work. I am also deeply grateful to Professor Mathieu Salzmann for his valuable advice, high standards, and steady guidance in ensuring that this thesis remained rigorous and focused.
+My thanks go first to Christophe Constantin, my supervisor at Logitech, who trusted this project enough to let it take its own direction and never let a weak argument pass without pushing back on it. I also thank Professor Mathieu Salzmann for holding the work to a standard that kept it honest and on track.
 
-I would also like to thank Kilian and Frederic for their technical support on the hardware side, and Jozef and Lilou for the many helpful discussions on machine learning and signal processing. I am grateful as well to my teammates Anais and Kevin, to Thomas, and to the broader team at Logitech for the many forms of support that surrounded this work, from technical discussions and thoughtful advice to the practical organization of data-collection sessions and user tests. This thesis would not have taken its final shape without that collective effort.
+Kilian and Frederic helped on the hardware side more times than I can count, and Jozef and Lilou were always up for a conversation about machine learning or signal processing that ended up mattering more than either of us expected. Yael's eye for UX and interface design shaped the minigames and recommendation views more than any single section of this thesis shows. Thanks as well to the wider team at Logitech for the discussions, the advice, and the work of organizing data-collection sessions and user tests that this thesis depended on.
 
-On a more personal note, I am deeply grateful to my partner, Sophia, for the patience, steadiness, and care she brought throughout a demanding period. Her presence made the difficult moments lighter and the better ones meaningful. I am equally thankful to my close friends Hugo, Christelle, and Maxence, whose encouragement, listening, and honesty helped me keep moving forward when my own perspective narrowed. More broadly, I am grateful to those closest to me who stood by me through a difficult time and helped me carry this work to its conclusion.
+Sophia, my partner, carried more of this than she should have had to during a hard stretch, and I would not have finished it without her. Hugo, Christelle, and Maxence kept me honest and kept me going when my own view of things got narrow. And to everyone else who stayed close through a difficult time: thank you for helping me see this through.
 }
 
 
@@ -74,33 +74,27 @@ ignore per-user biomechanical variance and degrade under neuromotor fatigue.
 This thesis addresses that gap by designing an end-to-end click-sensitivity
 recommendation pipeline for Haptic Inductive Trigger System (HITS) devices,
 evaluated on a corpus of 132 annotated recordings from 39 participants
-($\approx$3.4 hours of 1\,kHz telemetry).
+($\approx$3.5 hours of 1\,kHz telemetry).
 
 The system makes three contributions.
 (1)~A supervised labeling workflow that bootstraps frame-level annotations from
 algorithmic criteria and iteratively improves them through model-assisted
-refinement; the heuristic alone achieves a deployment F1 of only 0.373,
-confirming that human review is essential for the firmware-unregistered and
-noise-confounded cases that are most informative for model training.
-(2)~A four-class temporal intent-detection model supporting three architectures:
-a Random Forest that achieves a deployment F1 of 0.967 on the left channel
-(LOPO mean $0.921 \pm 0.024$) with make- and break-boundary bias under
-1.5\,ms, a Gradient Boosted Trees variant with asymmetric soft-label targets
-encoding the directional cost asymmetry of early versus late onset detection,
-and a dilated residual FCN with a 3\,060-frame receptive field whose
-cross-participant generalisation collapses to $0.597 \pm 0.174$ on the
-data-scarce right-button corpus, motivating larger collection campaigns.
-A probe ablation reveals that 10 raw depth samples at $\pm$10\,ms offsets
-contribute $+2.17\%$ deployment F1 --- three times the combined gain of all
-explicit kinematic derivative channels ($+0.68\%$), indicating that probe
-range and density are the primary levers for RF improvement.
+refinement, substantially reducing the manual annotation burden while
+preserving the boundary precision needed for downstream training.
+(2)~A four-class temporal intent-detection model supporting three
+architectures: a Random Forest and a Gradient Boosted Trees variant operating
+on hand-crafted sliding-window features, and a dilated residual FCN operating
+directly on raw telemetry with a 3\,060-frame learned receptive field. The Random Forest
+achieves the best deployment performance (F1~0.970 on the left channel), and
+a probe ablation shows that raw local context around each frame is a far
+stronger predictor than explicit kinematic derivative features, indicating
+where future modeling effort is best spent.
 (3)~A firmware-faithful threshold optimizer that exhaustively evaluates the
-discrete (AP, RT) grid via a Rapid Trigger FSM simulator. Across 238
-channel-records the optimizer reduces mean make latency from 31.2\,ms to
-14.4\,ms~--- a 16.8\,ms improvement spanning $\approx$1.5 perceptual
-just-noticeable differences~--- and increases the true-positive detection
-rate from 90.1\,\% to 95.0\,\% (Wilcoxon signed-rank $W=0$, $n=238$,
-$p\ll 0.001$), confirming that no session benefits from the factory default.
+discrete (AP, RT) grid via a Rapid Trigger FSM simulator, replacing manual
+threshold tuning with a data-driven recommendation. Across the annotated
+corpus, the optimizer consistently reduces make latency and increases the
+true-positive detection rate relative to the factory default, with the
+improvement holding across every session evaluated.
 \end{abstract}
 
 \clearpage
