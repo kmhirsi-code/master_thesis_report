@@ -57,9 +57,9 @@ viendront apr\`es.''\\
 \acknowledgments{%
 My thanks go first to Christophe Constantin, my supervisor at Logitech, who trusted this project enough to let it take its own direction and never let a weak argument pass without pushing back on it. I also thank Professor Mathieu Salzmann for holding the work to a standard that kept it honest and on track.
 
-Kilian and Frederic helped on the hardware side more times than I can count, and Jozef and Lilou were always up for a conversation about machine learning or signal processing that ended up mattering more than either of us expected. Yael's eye for UX and interface design shaped the minigames and recommendation views more than any single section of this thesis shows. Thanks as well to the wider team at Logitech for the discussions, the advice, and the work of organizing data-collection sessions and user tests that this thesis depended on.
+Kilian and Frederic helped on the hardware side more times than I can count, and Jozef and Lilou were always up for a conversation about machine learning or signal processing that ended up mattering more than either of us expected. I am also grateful for Yael's eye for UX and interface design, who helped me shape up the minigames and recommendation views. Thanks as well to the wider team at Logitech for the discussions, the advice, and the work of organizing data-collection sessions and user tests that this thesis depended on.
 
-Sophia, my partner, carried more of this than she should have had to during a hard stretch, and I would not have finished it without her. Hugo, Christelle, and Maxence kept me honest and kept me going when my own view of things got narrow. And to everyone else who stayed close through a difficult time: thank you for helping me see this through.
+Sophia, my partner, carried more of this than she should have had to during a hard stretch, and I would not have finished it without her. Hugo, Christelle, and Maxence kept me sane and still going when labeling the data. And to everyone else who stayed close through a difficult time: thank you for helping me see this through.
 }
 
 
@@ -70,11 +70,9 @@ Sophia, my partner, carried more of this than she should have had to during a ha
 \begin{abstract}
 Analog peripherals with continuous depth-sensing hardware offer sub-millimetre
 actuation precision, yet their firmware often relies on static thresholds that
-ignore per-user biomechanical variance and degrade under neuromotor fatigue.
+ignore per-user biomechanical variance and degradation under neuromotor fatigue.
 This thesis addresses that gap by designing an end-to-end click-sensitivity
-recommendation pipeline for Haptic Inductive Trigger System (HITS) devices,
-evaluated on a corpus of 132 annotated recordings from 39 participants
-($\approx$3.5 hours of 1\,kHz telemetry).
+recommendation pipeline for Haptic Inductive Trigger System (HITS) devices, evaluated on a set of 26 participants.
 
 The system makes three contributions.
 (1)~A supervised labeling workflow that bootstraps frame-level annotations from
@@ -84,11 +82,10 @@ preserving the boundary precision needed for downstream training.
 (2)~A four-class temporal intent-detection model supporting three
 architectures: a Random Forest and a Gradient Boosted Trees variant operating
 on hand-crafted sliding-window features, and a dilated residual FCN operating
-directly on raw telemetry with a 3\,060-frame learned receptive field. The Random Forest
+directly on raw telemetry with a large learned receptive field. The Random Forest
 achieves the best deployment performance (F1~0.970 on the left channel), and
 a probe ablation shows that raw local context around each frame is a far
-stronger predictor than explicit kinematic derivative features, indicating
-where future modeling effort is best spent.
+stronger predictor than explicit kinematic derivative features.
 (3)~A firmware-faithful threshold optimizer that exhaustively evaluates the
 discrete (AP, RT) grid via a Rapid Trigger FSM simulator, replacing manual
 threshold tuning with a data-driven recommendation. Across the annotated

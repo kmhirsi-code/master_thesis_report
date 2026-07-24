@@ -14,20 +14,19 @@ These hardware trends also intersect with user health. Higher APM in esports has
 
 
 \section{Toward Adaptive Intent Detection}
-One longer-term direction is intent inference before full mechanical actuation. Prior work on surface electromyography (sEMG) and embedded TinyML suggests this is technically plausible~\cite{reactemg, lda_emg, tinyml_mcu_inference, singh2023edge}. However, this thesis focuses on a narrower and directly evaluable scope: offline calibration from depth telemetry already produced by the peripheral. On-device inference is treated as future work (Section~\ref{sec:conclusion-fw}). Productization and UX integration (including the UX Exploration v2 flow and eventual GHub/GHabits integration) are likewise positioned as future work.
+One longer-term direction is intent inference before full mechanical actuation. Prior work on surface electromyography (sEMG) and embedded TinyML suggests this is technically plausible~\cite{reactemg, lda_emg, tinyml_mcu_inference, singh2023edge}. However, this thesis focuses on a narrower and directly evaluable scope: offline calibration from depth telemetry produced by the peripheral. On-device inference is treated as future work (Section~\ref{sec:conclusion-fw}). Involving varied gaming scenarios, fatigue detection, and UX integration are likewise positioned as future work.
 
 \section{Thesis and Contributions}
 The central hypothesis of this thesis is that per-user variation in click telemetry is structured enough to support automatic labeling, statistical modeling, and parameter optimization beyond static default settings. The contributions are:
 \begin{itemize}
-        \item A hybrid labeling pipeline for analog HID click intent that derives
+     \item A hybrid labeling pipeline for analog HID click intent that derives
             initial frame-level \texttt{MAKE\_ONSET}, \texttt{CLICK\_HOLD}, and \texttt{BREAK\_ONSET}
             annotations from algorithmic criteria (geometry, speed, and acceleration)
             and then improves boundary quality through model-assisted iteration.
     \item A four-class temporal sequence classifier with two model paths: a shallow
           path (Random Forest, Gradient Boosted Trees) operating on hand-crafted
           sliding-window features for sub-second per-session training, and a deep path
-          (dilated residual FCN) operating on raw telemetry with a
-          3{,}060-frame ($\approx$3\,s) learned receptive field.
+          (dilated residual FCN) operating on raw telemetry with a learned receptive field. This classifier is then used to segment click telemetry into labeled sequences for downstream analysis.
     \item A firmware-faithful threshold optimizer that exhaustively evaluates the
           discrete (AP, RT) grid via a Rapid Trigger FSM simulator, returning the
           minimum-loss configuration and a Pareto frontier over detection rate and
