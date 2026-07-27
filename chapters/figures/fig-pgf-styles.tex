@@ -1,8 +1,9 @@
 %% Shared pgfplots style for 8-panel sample signal figures
 \pgfplotsset{evalsmp/.style={
-  width=\linewidth, height=3.1cm,
+  width=\linewidth, height=4.2cm,
   xmin=0, xmax=128, ymin=0, ymax=1.08,
-  xtick=\empty, ytick={0,0.5,1},
+  xtick={0,32,64,96,128}, ytick={0,0.5,1},
+  xlabel={frame}, xlabel style={font=\tiny, yshift=3pt},
   ymajorgrids=true, grid style={dashed,gray!25},
   tick label style={font=\tiny},
   every axis plot/.append style={line width=0.85pt},

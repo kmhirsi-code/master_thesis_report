@@ -15,19 +15,20 @@ annotation produced 39,088 verified left-button and 6,645 right-button click cyc
 at 1\,kHz.  The three-phase workflow (heuristic bootstrap $\to$ model-assisted
 labeling $\to$ human review) substantially reduced annotation burden relative to
 labeling from scratch while maintaining biomechanical fidelity: the heuristic alone
-achieves F1~0.373, showing that human review is essential for the firmware-unregistered
-and noise-confounded cases that are most informative for model training.
+achieves a pooled deployment F1 of only 19.9\,\% across the full corpus, showing that
+human review is essential for the firmware-unregistered and noise-confounded cases
+that are most informative for model training.
 
 \paragraph{Click-intent classification.}
-The Random Forest achieves a deployment F1 of 0.970 on the left channel
-(grouped cross-validation mean 0.932~$\pm$~0.014), with make- and break-boundary
+The Random Forest achieves a deployment F1 of 97.0\,\% on the left channel
+(grouped cross-validation mean $93.2\pm1.4$\,pp), with make- and break-boundary
 bias under 1.5\,ms --- well within the 8--12\,ms perceptual threshold.  Random
 Forest and Gradient Boosted Trees achieve near-identical grouped cross-validation
 generalization, and the RF trains substantially faster on the left channel
 (23~minutes versus the FCN's 44~minutes), confirming it as the default production
 architecture.  The dilated FCN, despite a 3,060-frame receptive field, provides
 no measurable gain on the left channel in the single-test comparison and collapses
-under grouped cross-validation on that same channel (F1~$0.597 \pm 0.174$),
+under grouped cross-validation on that same channel (F1~$59.7 \pm 17.4$\,pp),
 revealing that large-context models require proportionally large annotated
 corpora.
 
@@ -39,8 +40,31 @@ roughly 1 perceptual just-noticeable difference for input timing, and represents
 directly perceptible responsiveness gain available to every user without any manual
 configuration.
 
+\paragraph{End-to-end user study.}
+A double-blind study with 26 participants (13 calibrated, 13 placebo) tested
+whether these theoretical gains are perceptible in gameplay. The calibrated group
+showed a statistically significant, large improvement in clicks-per-second
+($+10.7\,\%$ vs.\ $-2.5\,\%$ for placebo, $p=0.035$, $d=0.92$), directionally
+favorable but inconclusive results on a tracking task, and a non-significant
+accuracy trade-off on a fast-flicking task accompanied by a higher misclick count.
+The study confirms the optimizer behaves well end-to-end --- producing a healthy,
+non-degenerate spread of per-user recommendations --- while also surfacing a
+concrete risk (click-timing gains trading off against flick accuracy) that the
+offline evaluation alone could not have revealed.
+
 \section{Limitations}
 \label{sec:conclusion-lim}
+
+\paragraph{Heuristic unreliability across participants.}
+The heuristic bootstrap's deployment F1 varies from 0.1\,\% to 75.0\,\% across
+individual participants (CV~0.79 on the left channel), and this spread does not
+track cleanly with any collected demographic or self-reported gaming attribute.
+The heuristic applies one fixed geometric rule (peak prominence and derivative
+thresholds tuned on aggregate statistics) uniformly across the population; when
+individual grip pressure, resting depth, or micro-tremor magnitude differs enough
+from that aggregate profile, the rule fails outright rather than degrading
+gracefully. This is precisely the failure mode motivating a learned, per-user-adaptive
+classifier over a fixed geometric one.
 
 \paragraph{Right-channel data imbalance.}
 The right-button corpus is approximately six times smaller than the left (6,645 vs.\
@@ -67,14 +91,16 @@ label noise.
 
 \paragraph{FCN hyperparameter underexploration.}
 The dilated residual FCN was trained for only 16--17 epochs with a fixed
-hyperparameter set due to the cost of CPU-only training (\textasciitilde44 minutes per
-run). No systematic search over architecture depth, dropout rate, learning rate
-schedule, or number of dilation stages was performed. The observed grouped
-cross-validation collapse ($0.597 \pm 0.174$) may therefore reflect a poorly tuned
-model rather than a fundamental architectural limitation. A GPU-accelerated Optuna
-sweep over the FCN's hyperparameter space, combined with a larger right-button
-corpus, is the most likely path to closing the performance gap with the Random
-Forest.
+hyperparameter set due to the cost of training (\textasciitilde44 minutes per
+run, already with RTX~5080 CUDA acceleration). No systematic search over
+architecture depth, dropout rate, learning rate schedule, or number of dilation
+stages was performed. The observed grouped cross-validation collapse
+($59.7 \pm 17.4$\,pp) may therefore reflect a poorly tuned model rather than a
+fundamental architectural limitation. An Optuna sweep over the FCN's
+hyperparameter space, combined with a larger right-button corpus, is the most
+likely path to closing the performance gap with the Random Forest; since GPU
+acceleration is already in use, further speedup would have to come from a
+smaller search space or distributed sweeps rather than additional hardware.
 
 \paragraph{Absence of session-level temporal context.}
 All three architectures operate on a local window of at most 100\,ms of context
@@ -89,13 +115,29 @@ intent from noise. Section~\ref{sec:conclusion-fw} outlines a concrete feature-l
 extension addressing this gap.
 
 \paragraph{Binary click-matching criterion.}
-The overlap-constrained matching used throughout evaluation classifies each
-(predicted, ground-truth) pair as a binary hit or miss based on a 50\,\%
-Jaccard overlap threshold. This treats a prediction that overlaps at 51\,\% the
-same as a perfect overlap. A graded similarity metric --- such as a linear IoU
-score or a duration-error penalty --- would provide a more informative picture of
-where the boundary errors concentrate and would allow distinguishing a nearly
-correct prediction from a completely wrong one.
+The dual-radius matching criterion used for deployment F1 (Section~\ref{sec:eval-setup})
+classifies each (predicted, ground-truth) pair as a binary hit or miss based on whether
+\emph{both} onsets fall within a fixed 8\,ms radius of their respective ground-truth
+boundary centers. This treats a prediction whose make-onset misses the radius by 1\,ms
+the same as one that misses by 50\,ms, and discards any information about near-misses
+that fail only one of the two radius checks. A graded similarity metric --- such as a
+distance-weighted match score or a duration-error penalty --- would provide a more
+informative picture of where boundary errors concentrate and would allow distinguishing
+a nearly correct prediction from a completely wrong one.
+
+\paragraph{Underpowered user study.}
+The end-to-end user study (Section~\ref{sec:eval-user-study}) used 13 participants
+per group, well below the $\sim$29 per group ($n=58$ total) that a Lehr's-formula
+power calculation at the observed effect sizes ($d\approx0.75$) indicates is
+needed for adequately powered ($1-\beta=0.80$) comparisons. Observed power on the
+non-CPS metrics ranged from 0.17 to 0.62. Between-subject assignment left
+uncontrolled variance in baseline skill level, no warmup round preceded the timed
+tasks (leaving results susceptible to a learning-effect confound between the
+calibration and test rounds), and gamer/non-gamer counts were not balanced in
+advance across groups. The Tracking and Flicking results should therefore be read
+as hints rather than conclusive findings, and the Flicking accuracy/misclick
+trade-off in particular warrants replication before it is treated as a genuine
+effect of lowering the actuation point.
 
 \section{Future Work}
 \label{sec:conclusion-fw}
@@ -143,18 +185,35 @@ trained on residuals from the Stage~1 predictions, focusing its capacity entirel
 on the hard disambiguation cases near onset boundaries.
 
 \paragraph{FCN with systematic hyperparameter search.}
-With GPU acceleration and a larger corpus (achievable by extending collection
-to additional hardware platforms or broader user populations), a full Optuna sweep
-over the FCN's architecture and training hyperparameters would determine whether
-the left-channel performance gap is closeable. The probe ablation finding --- that
+With a larger corpus (achievable by extending collection to additional hardware
+platforms or broader user populations), a full Optuna sweep over the FCN's
+architecture and training hyperparameters, run on the existing RTX~5080, would
+determine whether the left-channel performance gap is closeable. The probe
+ablation finding --- that
 the RF's 100\,ms probe window captures most of the available local context ---
 suggests that the FCN's 3\,s receptive field advantage is currently nullified by
 data sparsity rather than by an architectural mismatch, making data expansion the
 higher-leverage investment.
 
-\paragraph{User perception study.}
-An end-to-end perceptual study --- presenting participants with their static-default
-and per-user-optimized configurations in counterbalanced order and measuring
-self-reported latency perception and click accuracy --- would close the loop between
-the objective timing improvements reported here and the subjective experience that
-motivates the work.
+\paragraph{Adequately powered, within-subject user study.}
+The user study reported in Section~\ref{sec:eval-user-study} establishes a
+significant CPS effect but was underpowered to resolve the Tracking and Flicking
+results. A follow-up study should (1) recruit approximately 58 participants
+(29 per group, per the Lehr's-formula estimate at the observed effect sizes),
+(2) have each participant play every task twice, once under the placebo condition
+and once under the calibrated condition, to reduce cross-participant skill-level
+variance rather than relying purely on between-subject comparison, (3) introduce
+a warmup round before each timed task to mitigate the learning-effect confound
+between the calibration and test rounds, and (4) balance gamer and non-gamer
+counts across groups in advance, or explicitly match participants on
+self-reported skill level, insofar as recruitment constraints allow.
+
+\paragraph{Movement-aware optimization objective.}
+The Flicking result (Section~\ref{sec:eval-user-study}) suggests that optimizing
+actuation timing in isolation may trade away accuracy in movement-heavy click
+contexts: a lower actuation point shortens make latency but also shortens the
+travel margin before an unintended actuation during a fast flick. Incorporating
+mouse-movement telemetry (velocity or acceleration at the moment of click) into
+the optimizer's objective function could let it distinguish stationary clicks,
+where a low actuation point is unambiguously beneficial, from in-motion clicks,
+where a more conservative threshold may better preserve accuracy.

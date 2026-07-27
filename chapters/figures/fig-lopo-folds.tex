@@ -1,16 +1,18 @@
-\begin{figure*}[htbp]
+\begin{figure*}[tbp]
 \centering
 \begin{tikzpicture}
 \begin{axis}[
-  ybar=2pt, bar width=9pt,
+  ybar=2pt, bar width=6pt,
   ylabel={Deployment F1},
-  ymin=0.80, ymax=0.975,
+  ymin=0.30, ymax=1.05,
   xtick={1,2,3,4,5}, xticklabels={Fold 1, Fold 2, Fold 3, Fold 4, Fold 5},
   ymajorgrids=true, grid style={dashed, gray!35},
   width=0.88\linewidth, height=5.5cm,
-  legend style={at={(0.02,0.98)}, anchor=north west, font=\small},
-  legend columns=2,
+  legend style={at={(0.5,1.02)}, anchor=south, font=\small, legend columns=-1,
+    /tikz/every even column/.append style={column sep=8pt}},
   enlarge x limits=0.12,
+  nodes near coords={\pgfmathprintnumber[fixed,precision=2]{\pgfplotspointmeta}},
+  every node near coord/.append style={font=\tiny, rotate=90, anchor=west},
 ]
 \addplot[fill=blue!60, draw=blue!75]
   table[x=fold, y=RF_L, col sep=space]{chapters/figures/data/lopo_folds.dat};
@@ -20,16 +22,15 @@
   table[x=fold, y=GBT_L, col sep=space]{chapters/figures/data/lopo_folds.dat};
 \addplot[fill=orange!25, draw=orange!50]
   table[x=fold, y=GBT_R, col sep=space]{chapters/figures/data/lopo_folds.dat};
-\legend{RF-L, RF-R, GBT-L, GBT-R}
+\addplot[fill=red!55, draw=red!70]
+  table[x=fold, y=FCN_L, col sep=space]{chapters/figures/data/lopo_folds.dat};
+\addplot[fill=red!20, draw=red!45]
+  table[x=fold, y=FCN_R, col sep=space]{chapters/figures/data/lopo_folds.dat};
+\legend{RF-L, RF-R, GBT-L, GBT-R, FCN-L, FCN-R}
 \end{axis}
 \end{tikzpicture}
-\caption{Per-fold grouped cross-validation deployment F1 for the four
-  tree-based model variants. The held-out participant group in Fold~4 yields
-  the lowest F1 for both L-channel models, suggesting an atypically
-  challenging click profile; since folds are formed by random participant
-  assignment, this reflects the specific composition of that fold rather than
-  any systematic ordering.
-  The L-channel models outperform their R-channel counterparts in every fold,
-  reflecting the larger left-button training corpus.}
+\caption{Per-fold grouped cross-validation deployment F1 for all six
+  release-candidate models. The FCN's collapse in folds 2--4 sets the
+  extended vertical span.}
 \label{fig:lopo-folds}
 \end{figure*}

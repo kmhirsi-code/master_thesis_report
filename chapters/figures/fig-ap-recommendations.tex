@@ -1,0 +1,39 @@
+\begin{figure*}[tbp]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=3 by 1, horizontal sep=18pt},
+  width=0.34\linewidth, height=4.2cm,
+  ybar, bar width=7pt,
+  xtick={12,24,36,48,60,72},
+  xticklabel style={font=\scriptsize},
+  tick label style={font=\scriptsize}, label style={font=\small},
+  xmin=0, xmax=84,
+  ymin=0, ymax=18,
+  ymajorgrids=true, grid style={dashed, gray!30},
+  axis x line*=bottom,
+  xlabel={Recommended AP (depth level)},
+  xlabel style={font=\scriptsize},
+]
+\nextgroupplot[ylabel={Participants ($n$)}, title={Flicking}, title style={font=\small}]
+\addplot[fill=blue!45, draw=blue!70]
+  table[x=ap, y=flicking, col sep=space] {chapters/figures/data/ap_recommendations.dat};
+
+\nextgroupplot[yticklabels=\empty, title={Tracking}, title style={font=\small}]
+\addplot[fill=orange!45, draw=orange!70]
+  table[x=ap, y=tracking, col sep=space] {chapters/figures/data/ap_recommendations.dat};
+
+\nextgroupplot[yticklabels=\empty, title={CPS}, title style={font=\small}]
+\addplot[fill=teal!45, draw=teal!70]
+  table[x=ap, y=cps, col sep=space] {chapters/figures/data/ap_recommendations.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Distribution of per-participant left-channel actuation-point
+recommendations ($n=26$) by game scenario, binned at each of the six
+reachable depth levels. Flicking and tracking both peak at 24--36 with no
+participant recommended above 48. CPS is the most concentrated at the
+lowest level (16 of 26 participants at AP 12) but also the only scenario
+with participants recommended at 60 and 72; Section~\ref{sec:eval-user-study}
+discusses the likely cause of this tail.}
+\label{fig:ap-recommendations}
+\end{figure*}

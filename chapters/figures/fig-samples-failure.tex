@@ -1,79 +1,73 @@
-\begin{figure*}[htbp]
+\begin{figure*}[tbp]
 \centering
+{\scriptsize
+\tikz{\draw[blue!60,line width=0.8pt] (0,0) -- (0.35,0);} depth\quad
+\tikz{\draw[orange!80,dashed,line width=0.8pt] (0,0) -- (0.35,0);} make prob.\quad
+\tikz{\draw[violet!55,dashed,line width=0.8pt] (0,0) -- (0.35,0);} break prob.\quad
+\colorbox{red!18}{\strut Make}~
+\colorbox{blue!10}{\strut Hold}~
+\colorbox{violet!12}{\strut Break}
+}\\[4pt]
 \begin{minipage}[t]{0.48\linewidth}
-\centering{\scriptsize\textbf{(e) Make FN: peak 10\,ms late (frame 74 vs.\ 64)}}
+\centering{\scriptsize\textbf{(e) Make FN: 10\,ms late}}
 \begin{tikzpicture}\begin{axis}[evalsmp]
 \addplot[fill=blue!10, draw=none,forget plot] coordinates{(0,0)(27,0)(27,1.08)(0,1.08)}--cycle;
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(27,0)(32,0)(32,1.08)(27,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(27,0)(32,0)(32,1.08)(27,1.08)}--cycle;
 \addplot[fill=red!18, draw=none,forget plot] coordinates{(64,0)(69,0)(69,1.08)(64,1.08)}--cycle;
 \addplot[fill=blue!10, draw=none,forget plot] coordinates{(69,0)(107,0)(107,1.08)(69,1.08)}--cycle;
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(107,0)(112,0)(112,1.08)(107,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(107,0)(112,0)(112,1.08)(107,1.08)}--cycle;
 \addplot[blue!60] table[x=frame,y=depth,col sep=space]{chapters/figures/data/sample_make2.dat};
-\addplot[orange!80] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_make2.dat};
-\addplot[green!65,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_make2.dat};
+\addplot[orange!80,dashed] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_make2.dat};
+\addplot[violet!55,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_make2.dat};
 \end{axis}\end{tikzpicture}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.48\linewidth}
-\centering{\scriptsize\textbf{(f) Make confusion: rapid double-click (8\,ms gap)}}
+\centering{\scriptsize\textbf{(f) Make confusion}}
 \begin{tikzpicture}\begin{axis}[evalsmp]
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(0,0)(2,0)(2,1.08)(0,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(0,0)(2,0)(2,1.08)(0,1.08)}--cycle;
 \addplot[fill=red!18, draw=none,forget plot] coordinates{(56,0)(60,0)(60,1.08)(56,1.08)}--cycle;
 \addplot[fill=blue!10, draw=none,forget plot] coordinates{(60,0)(62,0)(62,1.08)(60,1.08)}--cycle;
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(62,0)(64,0)(64,1.08)(62,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(62,0)(64,0)(64,1.08)(62,1.08)}--cycle;
 \addplot[fill=red!18, draw=none,forget plot] coordinates{(64,0)(69,0)(69,1.08)(64,1.08)}--cycle;
 \addplot[fill=blue!10, draw=none,forget plot] coordinates{(69,0)(114,0)(114,1.08)(69,1.08)}--cycle;
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(114,0)(119,0)(119,1.08)(114,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(114,0)(119,0)(119,1.08)(114,1.08)}--cycle;
 \addplot[blue!60] table[x=frame,y=depth,col sep=space]{chapters/figures/data/sample_make3.dat};
-\addplot[orange!80] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_make3.dat};
-\addplot[green!65,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_make3.dat};
+\addplot[orange!80,dashed] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_make3.dat};
+\addplot[violet!55,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_make3.dat};
 \end{axis}\end{tikzpicture}
 \end{minipage}
 
-\vspace{2pt}
+\vspace{4pt}
 \begin{minipage}[t]{0.48\linewidth}
-\centering{\scriptsize\textbf{(g) Break FN: 3-click window, centre break missed}}
+\centering{\scriptsize\textbf{(g) Break FN: 3-click window, middle click missed?}}
 \begin{tikzpicture}\begin{axis}[evalsmp]
 \addplot[fill=blue!10, draw=none,forget plot] coordinates{(0,0)(27,0)(27,1.08)(0,1.08)}--cycle;
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(27,0)(32,0)(32,1.08)(27,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(27,0)(32,0)(32,1.08)(27,1.08)}--cycle;
 \addplot[fill=red!18, draw=none,forget plot] coordinates{(47,0)(52,0)(52,1.08)(47,1.08)}--cycle;
 \addplot[fill=blue!10, draw=none,forget plot] coordinates{(52,0)(64,0)(64,1.08)(52,1.08)}--cycle;
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(64,0)(69,0)(69,1.08)(64,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(64,0)(69,0)(69,1.08)(64,1.08)}--cycle;
 \addplot[fill=red!18, draw=none,forget plot] coordinates{(84,0)(89,0)(89,1.08)(84,1.08)}--cycle;
 \addplot[fill=blue!10, draw=none,forget plot] coordinates{(89,0)(115,0)(115,1.08)(89,1.08)}--cycle;
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(115,0)(120,0)(120,1.08)(115,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(115,0)(120,0)(120,1.08)(115,1.08)}--cycle;
 \addplot[blue!60] table[x=frame,y=depth,col sep=space]{chapters/figures/data/sample_break2.dat};
-\addplot[orange!80] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_break2.dat};
-\addplot[green!65,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_break2.dat};
+\addplot[orange!80,dashed] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_break2.dat};
+\addplot[violet!55,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_break2.dat};
 \end{axis}\end{tikzpicture}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.48\linewidth}
-\centering{\scriptsize\textbf{(h) Break confusion: onset at max depth (frame 64)}}
+\centering{\scriptsize\textbf{(h) Break slightly too late}}
 \begin{tikzpicture}\begin{axis}[evalsmp]
 \addplot[fill=blue!10, draw=none,forget plot] coordinates{(0,0)(5,0)(5,1.08)(0,1.08)}--cycle;
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(5,0)(10,0)(10,1.08)(5,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(5,0)(10,0)(10,1.08)(5,1.08)}--cycle;
 \addplot[fill=red!18, draw=none,forget plot] coordinates{(41,0)(46,0)(46,1.08)(41,1.08)}--cycle;
 \addplot[fill=blue!10, draw=none,forget plot] coordinates{(46,0)(64,0)(64,1.08)(46,1.08)}--cycle;
-\addplot[fill=green!12,draw=none,forget plot] coordinates{(64,0)(69,0)(69,1.08)(64,1.08)}--cycle;
+\addplot[fill=violet!12,draw=none,forget plot] coordinates{(64,0)(69,0)(69,1.08)(64,1.08)}--cycle;
 \addplot[blue!60] table[x=frame,y=depth,col sep=space]{chapters/figures/data/sample_break3.dat};
-\addplot[orange!80] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_break3.dat};
-\addplot[green!65,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_break3.dat};
+\addplot[orange!80,dashed] table[x=frame,y=mprob,col sep=space]{chapters/figures/data/sample_break3.dat};
+\addplot[violet!55,dashed] table[x=frame,y=bprob,col sep=space]{chapters/figures/data/sample_break3.dat};
 \end{axis}\end{tikzpicture}
 \end{minipage}
-\caption{Failure modes (RF-L test set). Shading and line colors as in
-Figure~\ref{fig:samples-correct}.
-\textbf{(e)} False negative: make probability at the annotated onset (frame~64,
-depth~$\approx$0) is only 0.264; the model fires its peak 10\,ms later at
-frame~74, after the depth has risen further from rest.
-\textbf{(f)} Rapid double-click with an 8\,ms gap between clicks: make
-probability peaks confidently at frames 55--60 (first click), but can only
-reach 0.101 at the centre frame~64 (second click onset) --- the model's
-context has not reset.
-\textbf{(g)} Three-click window (3 complete cycles visible): the model fires
-break probability correctly on clicks 1 and 3, but only reaches 0.195 on the
-centre break (frame~64), missing it outright.
-\textbf{(h)} The break onset is annotated at frame~64 when depth is at its
-maximum (1.0 = fully pressed); the model interprets break onset as depth
-beginning to fall and peaks at frame~68 ($+4$\,ms late), revealing an
-annotation convention mismatch.}
+
+\caption{Failure modes (RF-L test set).}
 \label{fig:samples-failure}
 \end{figure*}

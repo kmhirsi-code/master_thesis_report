@@ -2,11 +2,15 @@
 \label{chap:eval}
 %%%%%%%%%%%%%%%%%%%%
 
-This chapter evaluates the three subsystems introduced in
-Chapter~\ref{chap:implementation}: the frame-level click-intent classifier, the
-classification-to-segmentation pipeline, and the firmware threshold optimizer. For
-each subsystem we define the evaluation protocol, report quantitative results on a
-held-out test set, and compare against appropriate baselines.
+This chapter evaluates the system introduced in Chapter~\ref{chap:implementation}
+along two complementary axes. Sections~\ref{sec:eval-setup}--\ref{sec:eval-opt}
+evaluate the offline pipeline in isolation: the frame-level click-intent classifier
+and its classification-to-segmentation pipeline (Sections~\ref{sec:eval-results}
+and~\ref{sec:eval-seg}), and the firmware threshold optimizer built on top of it
+(Section~\ref{sec:eval-opt}), each against an appropriate baseline on held-out or
+full-corpus data. Section~\ref{sec:eval-user-study} then closes the loop with an
+end-to-end user study that tests whether the optimizer's theoretical gains translate
+into measurable gameplay performance and subjective trust for real participants.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Experimental Setup}
@@ -39,26 +43,74 @@ after all hyperparameter selection is complete.
 
 \subsection{Metrics}
 \paragraph{Detection and segmentation.}
-A predicted click interval is counted as a true positive (TP) when it overlaps a
-ground-truth interval by at least 50\,\% of the longer interval (the same
-overlap-constrained monotonic matching used by the optimizer).  \emph{Deployment F1}
-is the harmonic mean of click-level precision and recall.  \emph{Mean IoU} is the
-average Jaccard index over matched pairs.
+A predicted click is counted as a true positive (TP) only if \emph{both} its
+predicted make-onset and break-onset fall within a fixed tolerance
+$r=\text{\texttt{DEPLOYMENT\_EVAL\_RADIUS\_MS}}=4$\,ms of the corresponding
+ground-truth boundary centers (the midpoints of the labeled make and break
+onset windows). Matching is one-to-one and greedy, performed via binary search
+over ground-truth make-onset centers. A predicted click that satisfies the
+make-onset radius but misses the break-onset radius (or vice versa) is
+\emph{not} a TP: it is counted as both a false positive (the unmatched
+prediction) and a false negative (the unmatched ground-truth click). This
+dual-radius criterion is deliberately stricter than a single overlap or IoU
+threshold, since a click is only useful downstream if both of its boundaries
+are individually accurate. \emph{Deployment F1} is the harmonic mean of
+click-level precision and recall under this criterion. \emph{Mean IoU} is a
+separate, purely diagnostic Jaccard index computed only over matched (TP)
+pairs, and says nothing about clicks that failed the dual-radius gate; this is
+why IoU can remain high even when precision and recall are low
+(Section~\ref{sec:eval-discussion}).
 
 \paragraph{Boundary timing.}
 For each matched pair we compute the signed make-boundary error $e^{(m)}$ and
 break-boundary error $e^{(b)}$ in milliseconds (positive = late, negative = early).
 We report the mean bias and the absolute spread (mean absolute deviation) per boundary.
+Boundary timing details are shown in Figure~\ref{fig:latency}.
+
+\input{chapters/figures/fig-latency}
 
 \paragraph{Cross-validation.}
 For all three architectures (Random Forest, GBT, and FCN), 5-fold grouped
 cross-validation deployment F1 is reported as mean $\pm$ standard deviation, in
 addition to single held-out test set performance.
 
+\paragraph{Optimizer objective and metrics.}
+The firmware threshold optimizer (Section~\ref{sec:eval-opt}) scores each
+candidate (AP, RT) configuration with a loss function combining four terms:
+\emph{TP rate}, the fraction of labeled click intents the configuration
+successfully registers under the FSM simulator; \emph{click distance}, the
+timing offset in milliseconds between the simulated firmware event and the
+labeled click; and \emph{make latency} and \emph{break latency}, the
+signed timing offsets in milliseconds between the simulated make/break firmware
+event and the corresponding labeled boundary. The loss combines these as
+$w_\text{make} \cdot e^{(m)} + (1-w_\text{make}) \cdot e^{(b)}$ over matched
+clicks, with a fixed detection-cost penalty $c_\text{det}$ applied per missed
+click, a break-timing weight $\beta$, and an exponent $\kappa$ controlling the
+penalty curvature; all four are held fixed across sessions
+($w_\text{make}=0.6$, $c_\text{det}=40$\,ms, $\beta=0$, $\kappa=2.0$) so that
+configurations are compared on a common scale. Statistical consistency of the
+optimizer's improvement over the static default across sessions is assessed
+with a Wilcoxon signed-rank test on the per-session loss delta. The Wilcoxon
+test is chosen over a paired $t$-test because it makes no assumption of
+normally distributed deltas and is robust to the outlier sessions where the
+static default fails catastrophically (very large loss); it evaluates the
+null hypothesis that the paired loss differences are symmetric around zero,
+against the one-sided alternative that the optimized configuration's loss is
+stochastically smaller.
+
+\paragraph{User-study statistics.}
+The end-to-end user study (Section~\ref{sec:eval-user-study}) reports, per
+task and metric: the mean $\Delta$ (change from calibration to test round) for
+each group, a two-sided significance test between the experimental and placebo
+groups ($p$), the standardized effect size (Cohen's $d$), and the observed
+post-hoc statistical power ($1-\beta$) at $\alpha=0.05$. Required sample size
+for a target power of 0.80 at the observed effect sizes is estimated with
+Lehr's approximation ($n \approx 16/d^2$ per group).
+
 \paragraph{Hardware.}
 All timings are measured on an AMD Ryzen~9 7900X (12-core, 4.7\,GHz), 16\,GB RAM,
-no GPU.  The FCN uses PyTorch CPU inference for fair comparison; a GPU would
-substantially accelerate training.
+with an NVIDIA RTX~5080 GPU.  The Random Forest and GBT train on CPU; the FCN uses
+PyTorch with CUDA acceleration for both training and inference.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Classification and Segmentation Results}
@@ -67,50 +119,65 @@ substantially accelerate training.
 
 \subsection{Deployment Performance on the Test Set}
 Table~\ref{tab:deployment} reports click-level detection and boundary timing for all
-six release-candidate models on the held-out test set.  The Random Forest (L channel)
+six release-candidate models on the held-out test set, alongside the heuristic
+bootstrap evaluated on the full 132-recording corpus (not just the held-out test
+set, since the heuristic has no train/test distinction to leak across and a
+larger, population-wide sample gives a more representative characterization of
+its performance). The Random Forest (L channel)
 achieves the highest deployment F1 of 97.0\,\%, consistent with its design-chapter
 positioning as the primary production architecture.
 
-\begin{table*}[htbp]
+\begin{table*}[t]
+\centering
+\begin{minipage}[t]{0.50\linewidth}
 \centering
 \small
-\caption{Click-level deployment metrics on the held-out test set.
-Best value in each column is \textbf{bolded}.
-Boundary timing details are shown in Figure~\ref{fig:latency}.
-The heuristic uses the OS-event walk-back for Make and the first velocity
-zero-crossing for Break; its IoU on matched clicks exceeds the best model
-because its duration estimate is accurate when anchored on a true OS event,
-but it misses the majority of clicks that were not registered by the firmware.}
-\label{tab:deployment}
 \setlength{\tabcolsep}{5pt}
 \begin{tabular}{llcccc}
 \hline
 \textbf{Model} & \textbf{Ch.} & \textbf{F1} & \textbf{P} & \textbf{R} & \textbf{IoU} \\
 \hline
-Heuristic      & L & 0.373 & 0.365 & 0.381 & \textbf{0.916} \\
-Heuristic      & R & 0.118 & 0.113 & 0.123 & 0.899 \\
+Heuristic      & L & 19.9\,\% & 20.0\,\% & 20.0\,\% & 91.6\,\% \\
+Heuristic      & R & 12.2\,\% & 11.5\,\% & 12.9\,\% & 89.9\,\% \\
 \hline
-Random Forest  & L & \textbf{0.970} & \textbf{0.975} & 0.964 & 0.916 \\
-Random Forest  & R & 0.918 & 0.930 & 0.905 & 0.900 \\
-GBT            & L & 0.937 & 0.932 & 0.943 & 0.899 \\
-GBT            & R & 0.913 & 0.913 & 0.913 & \textbf{0.917} \\
-FCN            & L & 0.936 & 0.923 & \textbf{0.948} & 0.915 \\
-FCN            & R & 0.836 & 0.862 & 0.811 & 0.915 \\
+RF             & L & \textbf{97.0\,\%} & \textbf{97.5\,\%} & \textbf{96.4\,\%} & 91.6\,\% \\
+RF             & R & 91.8\,\% & 93.0\,\% & 90.5\,\% & 90.0\,\% \\
+GBT            & L & 93.7\,\% & 93.2\,\% & 94.3\,\% & 89.9\,\% \\
+GBT            & R & 91.3\,\% & 91.3\,\% & 91.3\,\% & \textbf{91.7\,\%} \\
+FCN            & L & 93.6\,\% & 92.3\,\% & 94.8\,\% & 91.5\,\% \\
+FCN            & R & 83.6\,\% & 86.2\,\% & 81.1\,\% & 91.5\,\% \\
 \hline
 \end{tabular}
+\par\vspace{4pt}
+\refstepcounter{table}
+\textbf{Table~\thetable:} Click-level deployment metrics. The heuristic bootstrap is evaluated on
+the full 132-recording corpus (39 participants); the Random Forest, GBT, and FCN
+are evaluated on the held-out test set only. Best value in each column among the
+learned models is \textbf{bolded}.
+\label{tab:deployment}
+\addcontentsline{lot}{table}{\protect\numberline{\thetable}{Click-level deployment metrics.}}
+\end{minipage}\hspace{0.02\linewidth}
+\begin{minipage}[t]{0.44\linewidth}
+\vspace{-3.7\baselineskip}
+\centering
+\input{chapters/figures/fig-deployment-f1}
+\end{minipage}
 \end{table*}
-
-\input{chapters/figures/fig-latency}
 
 All models achieve sub-2\,ms mean boundary bias, which is well within the perceptual
 threshold for click timing ($\approx$8--12\,ms).  The heuristic bootstrap achieves
-a deployment F1 of only 0.373 on the left channel: while its duration estimates are
-accurate when a click is found (IoU~0.916, exceeding the best model), it misses
-the majority of clicks entirely because it relies on OS digital events as anchors
-and cannot recover presses that the firmware did not register.  This gap --- 0.373
-vs.\ 0.970 for the RF --- directly quantifies the value of the learned pipeline.
+a pooled deployment F1 of only 19.9\,\% on the left channel across the full corpus,
+with per-participant F1 ranging from 0.1\,\% to 75.0\,\% (Section~\ref{sec:eval-discussion}).
+The dual-radius matching criterion (Section~\ref{sec:eval-setup}) means a click is
+only a true positive if both its make- and break-onsets are individually accurate;
+the heuristic's duration estimate can still be accurate when a click is matched at
+all (IoU~91.6\,\%), but that says nothing about the many clicks it fails to match
+under the stricter dual-radius gate (see Section~\ref{sec:eval-discussion} for why
+this matched-pair IoU is comparable to the RF's despite the large F1 gap).  This gap
+--- 19.9\,\% vs.\ 97.0\,\% for the RF --- directly quantifies the value of the
+learned pipeline.
 The FCN underperforms significantly
-on the R channel (F1 0.836 vs.\ 0.936 for L), attributable to the much smaller
+on the R channel (F1 83.6\,\% vs.\ 93.6\,\% for L), attributable to the much smaller
 right-button training corpus (6,645 cycles vs.\ 39,088) on which a 3-second receptive
 field provides limited benefit. Figure~\ref{fig:deployment-f1} summarises deployment
 F1 across all three architectures and both channels. Figure~\ref{fig:samples-correct}
@@ -122,50 +189,60 @@ annotated onset.
 
 \input{chapters/figures/fig-samples-failure}
 
-\input{chapters/figures/fig-deployment-f1}
-
 \subsection{Cross-Participant Generalization (5-Fold Grouped CV)}
 Table~\ref{tab:cv} reports leave-one-participant-group-out cross-validation deployment
 F1 for all six models.
 
-\begin{table*}[htbp]
+\begin{table*}[t]
 \centering
 \small
 \caption{5-fold grouped cross-validation deployment F1, with each fold holding out a
-distinct group of participants. Fold~4 of FCN-L collapses to 0.367, revealing severe
-cross-participant generalisation failure at current dataset sizes.}
+distinct group of participants.}
 \label{tab:cv}
 \begin{tabular}{llccc}
 \hline
 \textbf{Model} & \textbf{Ch.} & \textbf{Mean F1} & \textbf{Std} & \textbf{Per-fold F1s} \\
 \hline
-Random Forest & L & 0.932 & 0.014 & [0.939, 0.953, 0.929, 0.910, 0.932] \\
-Random Forest & R & 0.890 & 0.021 & [0.875, 0.906, 0.864, 0.882, 0.922] \\
-GBT           & L & 0.934 & 0.010 & [0.938, 0.947, 0.934, 0.918, 0.933] \\
-GBT           & R & 0.873 & 0.028 & [0.856, 0.895, 0.859, 0.839, 0.914] \\
-FCN           & L & 0.597 & 0.174 & [0.822, 0.481, 0.544, 0.367, 0.774] \\
-FCN           & R & 0.760 & 0.090 & [0.805, 0.821, 0.612, 0.702, 0.858] \\
+Random Forest & L & 93.2\,\% & 1.4\,pp & [93.9, 95.3, 92.9, 91.0, 93.2]\,\% \\
+Random Forest & R & 89.0\,\% & 2.1\,pp & [87.5, 90.6, 86.4, 88.2, 92.2]\,\% \\
+GBT           & L & 93.4\,\% & 1.0\,pp & [93.8, 94.7, 93.4, 91.8, 93.3]\,\% \\
+GBT           & R & 87.3\,\% & 2.8\,pp & [85.6, 89.5, 85.9, 83.9, 91.4]\,\% \\
+FCN           & L & 59.7\,\% & 17.4\,pp & [82.2, 48.1, 54.4, 36.7, 77.4]\,\% \\
+FCN           & R & 76.0\,\% & 9.0\,pp & [80.5, 82.1, 61.2, 70.2, 85.8]\,\% \\
 \hline
 \end{tabular}
 \end{table*}
 
-RF and GBT achieve near-identical CV means ($0.932 \pm 0.014$ vs.\ $0.934 \pm 0.010$
+RF and GBT achieve near-identical CV means ($93.2 \pm 1.4$\,pp vs.\ $93.4 \pm 1.0$\,pp
 on the L channel), supporting the design choice of RF as the default architecture.
 The FCN reveals a critical generalisation failure: its left-channel mean collapses to
-$0.597 \pm 0.174$, with fold~4 dropping to 0.367. Despite achieving 0.936 on the
-single held-out test set, the FCN cannot reliably generalise to unseen participant
+$59.7 \pm 17.4$\,pp, with fold~4 dropping to 36.7\,\%. Despite achieving 93.6\,\% on the
+single held-out test set, the FCN does not seem to reliably generalise to unseen participant
 groups at current dataset sizes, confirming it is unsuitable for production use
 without a substantially larger training corpus. Figure~\ref{fig:lopo-folds} plots
-the per-fold deployment F1 for the RF and GBT models across all five folds.
+the per-fold deployment F1 for the RF and GBT models across all five folds: the
+L-channel models outperform their R-channel counterparts in every fold, reflecting
+the larger left-button training corpus.
 
 \input{chapters/figures/fig-lopo-folds}
 
 \subsection{Training Dynamics}
 Figure~\ref{fig:training-curves} shows per-iteration training and validation loss for
 the GBT models and per-epoch loss for the FCN models. The Random Forest is excluded
-as it is a single-pass batch learner with no iterative loss history.
+as it is a single-pass batch learner with no iterative loss history. The GBT
+validation-training gap is substantially wider on the R channel than on the L
+channel, reflecting the harder right-button class distribution; in the FCN panels,
+the model enters the overfitting regime past the marked best-validation epoch.
 
 \input{chapters/figures/fig-training-curves}
+
+Figure~\ref{fig:gen-gap} quantifies the corresponding accuracy-based
+generalisation gap for all six models. All gaps stay within $\pm 6\,\%$,
+so none of the architectures overfits severely at the accuracy level; the
+right-channel FCN shows the largest negative gap ($-5.3\,\%$), consistent with
+strong dropout regularisation on a small corpus, while GBT and FCN left-channel
+models show small positive gaps ($<1\,\%$), indicating marginal overfitting on
+the more abundant left-button training set.
 
 \input{chapters/figures/fig-gen-gap}
 
@@ -178,11 +255,11 @@ as it is a single-pass batch learner with no iterative loss history.
 Table~\ref{tab:thresholds} shows the segmentation configuration selected by the
 Bayesian sweep for each model.
 
-\begin{table*}[htbp]
+\begin{table*}[t]
 \centering
 \small
-\caption{Optimal segmentation configuration per model (Bayesian sweep on validation
-set). Make and break threshold values are Schmitt-trigger entry thresholds on the
+\caption{Optimal segmentation configuration per model, selected by Bayesian sweep on
+the validation set. $\theta_m$, $\theta_b$: Schmitt-trigger entry thresholds on the
 probability output.}
 \label{tab:thresholds}
 \begin{tabular}{llccccc}
@@ -203,16 +280,90 @@ FCN           & R & 0.30 & 0.50 & peak & plateau\_median & hungarian \\
 \subsection{Pairing Strategy Comparison}
 The three pairing strategies (greedy first-next, Hungarian assignment, and trained
 logistic scorer) produce nearly identical segmentation IoU across all models and
-channels, with a maximum gap of 0.001 IoU points. Once the classifier yields
+channels, with a maximum gap of 0.1\,pp IoU. Once the classifier yields
 well-calibrated probability outputs the assignment problem is largely trivial, and
 greedy first-next is selected as the default for RF and FCN~L, while the trained
 scorer is selected for GBT and Hungarian for FCN~R.
 
+\subsection{Channel and Probe Ablation (Random Forest)}
+\label{sec:eval-channel-ablation}
+
+Table~\ref{tab:channel-ablation} reports an additive ablation from window statistics
+only (no probes, no kinematics) through to the full production feature set.
+All configurations use the same RF-L hyperparameters; only the preprocessing flags
+change.
+
+\begin{table*}[t]
+\centering
+\small
+\caption{RF-L deployment F1 under progressive feature inclusion. $\Delta$ (row) is
+relative to the previous row; $\Delta$ (cumul.) is relative to window statistics
+only. Context probes: 10 raw depth samples at $\pm$10\,ms offsets (5 left, 5 right).}
+\label{tab:channel-ablation}
+\begin{tabular}{lcccc}
+\hline
+\textbf{Configuration} & \textbf{Features} & \textbf{F1} & \textbf{$\Delta$ (row)} & \textbf{$\Delta$ (cumul.)} \\
+\hline
+Window statistics only (no probes, no kinematics) & 21 & 94.21\,\% & --- & --- \\
++ Context probes ($\pm$10\,ms, 5+5)               & 41 & 96.38\,\% & $+2.17\%$ & $+2.17\%$ \\
++ Velocity                                         & 59 & 96.97\,\% & $+0.59\%$ & $+2.76\%$ \\
++ Acceleration                                     & 77 & 97.02\,\% & $+0.05\%$ & $+2.81\%$ \\
++ Jerk                                             & 95 & 97.06\,\% & $+0.04\%$ & $+2.85\%$ \\
+\hline
+\end{tabular}
+\end{table*}
+
+Context probes contribute $+2.17\%$ deployment F1, roughly three times the combined
+gain of all kinematic derivative channels ($+0.68\%$).  The 10 raw depth samples at
+$\pm$10\,ms give the RF direct access to the local depth trajectory, allowing it to
+approximate velocity and acceleration implicitly from adjacent probe values; explicit
+kinematic channels are therefore largely redundant, and jerk adds a negligible
+$+0.04\%$ on top.
+
+Figure~\ref{fig:feat-importance} shows how importance is distributed across channel
+groups at each ablation step.  \texttt{analog\_L} --- which subsumes both window
+statistics and probe values --- is the dominant group in every configuration.  When
+kinematic channels are absent its share reaches 70.6\,\% (with probes) or 81.9\,\%
+(window statistics only).  As kinematics are added, velocity absorbs part of that
+share but \texttt{analog\_L} never falls below 31\,\%, confirming that the raw
+depth trajectory carries information that derived channels cannot fully substitute.
+\texttt{digital\_L} remains stable at 18--29\,\% throughout, reflecting the
+independent predictive value of the OS-reported press event.
+
+For the RF architecture, probe range and density therefore matter more than channel
+engineering.  The natural next ablation is a \emph{wider-probe} study (e.g.\
+$\pm$50\,ms or $\pm$100\,ms offsets) to determine whether extending the 100\,ms
+probe horizon further narrows the gap to the FCN's 3\,s receptive field.
+
 % ─────────────────────────────────────────────────────────────────────────────
 % ─────────────────────────────────────────────────────────────────────────────
+\FloatBarrier
 \section{Optimizer Evaluation}
 \label{sec:eval-opt}
 % ─────────────────────────────────────────────────────────────────────────────
+
+\begin{table*}[t]
+\centering
+\small
+\caption{Optimizer comparison: static default versus per-user optimized (AP, RT)
+configuration. Mean and median over 238 channel-records (132 sessions, 39 participants).}
+\label{tab:optimizer}
+\begin{tabular}{lrrrrrr}
+\hline
+\textbf{Metric}
+  & \multicolumn{2}{c}{\textbf{Static default}}
+  & \multicolumn{2}{c}{\textbf{Optimized}}
+  & \multicolumn{2}{c}{\textbf{$\Delta$}} \\
+& mean & median & mean & median & $\Delta$mean & $\Delta$median \\
+\hline
+Optimizer loss             & 36.2  & 28.4  & 18.4  &  15.3 & $-17.8$ & $-13.0$ \\
+TP rate                    & 90.9\,\% & 94.9\,\% & 97.5\,\% &  99.6\,\% & $+6.6$\,pp & $+4.7$\,pp \\
+Click distance (ms)        & 27.8  & 23.6  & 14.8  &  12.7 & $-13.0$ & $-10.9$ \\
+Make latency (ms)          & 27.0  & 24.5  & 15.4  &  13.1 & $-11.6$ & $-11.4$ \\
+Break latency (ms)         & 29.1  & 21.5  & 11.2  &  9.0  & $-17.9$ & $-12.5$ \\
+\hline
+\end{tabular}
+\end{table*}
 
 \subsection{Comparison with Static Default}
 The firmware threshold optimizer is evaluated by comparing the per-user optimal
@@ -228,29 +379,6 @@ RF model's segmented click intervals as labeled intent, applying the production 
 function ($w_\text{make}=0.6$, $c_\text{det}=40$\,ms, $\beta=0$, $\kappa=2.0$).  The
 static default is scored through the identical firmware FSM simulator to ensure a fair
 comparison.
-
-\begin{table*}[htbp]
-\centering
-\small
-\caption{Optimizer comparison: static default versus per-user optimized (AP, RT)
-configuration. Mean and median over 238 channel-records (132 sessions, 39 participants).}
-\label{tab:optimizer}
-\begin{tabular}{lrrrrrr}
-\hline
-\textbf{Metric}
-  & \multicolumn{2}{c}{\textbf{Static default}}
-  & \multicolumn{2}{c}{\textbf{Optimized}}
-  & \multicolumn{2}{c}{\textbf{$\Delta$}} \\
-& mean & median & mean & median & $\Delta$mean & $\Delta$median \\
-\hline
-Optimizer loss             & 36.2  & 28.4  & 18.4  &  15.3 & $-17.8$ & $-13.0$ \\
-TP rate                    & 0.909 & 0.949 & 0.975 &  0.996 & $+0.066$ & $+0.047$ \\
-Click distance (ms)        & 27.8  & 23.6  & 14.8  &  12.7 & $-13.0$ & $-10.9$ \\
-Make latency (ms)          & 27.0  & 24.5  & 15.4  &  13.1 & $-11.6$ & $-11.4$ \\
-Break latency (ms)         & 29.1  & 21.5  & 11.2  &  9.0  & $-17.9$ & $-12.5$ \\
-\hline
-\end{tabular}
-\end{table*}
 
 Table~\ref{tab:optimizer} summarises the comparison. The optimizer reduces loss by
 49\,\% (mean) and increases the TP rate from 90.9\,\%
@@ -273,57 +401,220 @@ parameter to $c_\text{det}=40$\,ms removes the optimizer's incentive to trade
 break-timing accuracy for a marginal TP-rate gain by maxing out RT hysteresis, so
 break latency is penalized consistently across all 132 sessions.
 
-\subsection{Channel and Probe Ablation (Random Forest)}
-\label{sec:eval-channel-ablation}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{End-to-End User Study}
+\label{sec:eval-user-study}
+% ─────────────────────────────────────────────────────────────────────────────
 
-Table~\ref{tab:channel-ablation} reports an additive ablation from window statistics
-only (no probes, no kinematics) through to the full production feature set.
-All configurations use the same RF-L hyperparameters; only the preprocessing flags
-change.
+The evaluations above quantify the pipeline's internal correctness (detection
+accuracy, boundary timing) and the optimizer's theoretical gain against the FSM
+simulator. Neither establishes that a per-user optimized configuration is
+perceptible or beneficial to an actual player. We therefore ran a controlled,
+double-blind user study to test whether the optimizer's recommendation improves
+measured gameplay performance and whether users perceive a difference in trust
+toward the recommended configuration.
 
-\begin{table*}[htbp]
+\subsection{Protocol}
+26 participants were recruited and randomly, evenly split into an experimental
+group (calibrated configuration applied, $n=13$) and a placebo group (calibration
+game played identically, but no configuration change applied, $n=13$), following a
+double-blind design. Group sizes were fixed in advance. Each session lasted
+10--15 minutes and consisted of an onboarding phase (comfort settings, DPI, and a
+free run to familiarize the participant with the minigames) followed by three
+calibration-and-test rounds, one per task:
+
+\begin{itemize}
+  \item \textbf{Flicking} (1-minute calibration game, then one test round):
+    fast target-acquisition task, evaluated on targets hit and shot accuracy.
+  \item \textbf{Tracking} (1-minute calibration game, then one test round):
+    sustained cursor-on-target task, evaluated on kill count and fraction of
+    time spent on-target.
+  \item \textbf{CPS} (10-second calibration game, then one test round of $\le$30\,s):
+    clicks-per-second task, evaluated on raw click rate.
+\end{itemize}
+
+To ensure uniform task difficulty across participants and reproducible comparisons
+within each participant, target spawn locations and order were generated using
+deterministic seeded randomization rather than independent random sequences for
+each player. A single fixed seed was used across all 26 participants for each
+task, ensuring calibration and test rounds are directly comparable both within and
+across individuals.
+
+\emph{Block-randomized target generation.}
+The sequence generator uses block randomization to control target difficulty:
+targets are grouped into distance ``buckets'' (five equally spaced distance values
+from 200\,px to 600\,px for flicking and tracking), and within each conceptual block
+of $b$ targets, each bucket distance is used exactly once, in a shuffled order.
+Formally, the generator partitions the maximum expected target count (240 targets
+per task) into $\lceil 240/5 \rceil = 48$ blocks of five targets each. Within every
+block, the five bucket indices are shuffled using the same seed's pseudo-random stream,
+then the shuffled block is appended to the sequence. Any participant who completes
+$k \cdot 5$ targets in the time limit (where $k$ is an integer) encounters exactly
+$k$ complete blocks, thus exactly $k$ targets at each distance, guaranteeing equal
+difficulty distribution regardless of task duration or participant performance.
+For participants who finish a partial block, the shortfall is at most one target
+per bucket, bounding the per-bucket imbalance.
+
+\emph{Controlling seed effects across per-participant calls.}
+Rather than re-initializing the generator identically for both rounds (which would
+require re-running the same random number stream and risk subtle drift due
+to arena-size differences), the calibration round recorded the sequence of
+distance, angle, and speed values for every target placement. The test round then
+replayed this recorded sequence in reversed order, ensuring the exact
+same targets (at the same distances and angles) reappear but traversed backward.
+This reverse-replay approach: (1)~eliminates re-seeding as a source of error by
+recording ground truth; (2)~provides a fresh test sequence that is geometrically
+equivalent but not identical (avoiding simple memorization while preserving difficulty
+balance); and (3)~preserves recorded speed samples from tracking calibration,
+so evaluation rounds can reuse them rather than drawing new samples that would
+pair each target's distance with an uncorrelated speed.
+
+Within-participant, holding the target geometry constant (same positions and distances,
+only in reverse order) isolates performance change as a measurement of true skill or
+calibration effect. Across participants, the global seed ensures the pool of reachable
+target positions and distance buckets are uniform, so inter-participant comparisons
+are not biased by one participant facing systematically easier or harder geometry.
+
+To guarantee fidelity between calibration and test sequences, all target placements
+were pre-generated for all 26 participants before the study began, and each sequence
+was inspected to ensure no distance-clamping or angle-fallback events occurred. This
+pre-generation allowed us to verify that every target in both the calibration and
+reversed test sequence was placed cleanly within the configured distance buckets
+without any defensive fallbacks, eliminating any divergence between rounds due to
+arena-size variation or outlier positions. The pre-generated sequences were then
+loaded at runtime for each participant, ensuring exact reproducibility and uniform
+difficulty across all 26 × 3 task instances.
+
+\emph{Per-participant seed variance.}
+Although a global seed was fixed across all participants to enable cross-participant
+comparison, each participant's internal gameplay is still subject to stochasticity in
+mouse movement, reaction time, and click latency — factors that are system properties,
+not controlled in the protocol. The seeding of target positions is held constant
+to isolate the effect of the device calibration, leaving individual behavior variance
+as the independent variable of interest.
+
+No warmup round preceded the timed tasks. Each task's score is analyzed independently;
+the protocol does not attempt a single unified performance metric across tasks, since
+each task acts as a proxy for a distinct game context (FPS flicking, tracking-heavy
+shooters, and rhythm/CPS-bound inputs) rather than a single underlying skill.
+
+\subsection{Results}
+Table~\ref{tab:user-study} summarizes the per-task comparison between the
+experimental (calibrated) and placebo groups. Effect sizes are reported as
+Cohen's $d$; $1-\beta$ is the observed post-hoc power at $\alpha=0.05$.
+
+\begin{table*}[t]
 \centering
 \small
-\caption{RF-L deployment F1 under progressive channel inclusion. $\Delta$ is
-relative to the previous row. Context probes: 10 raw depth samples at $\pm$10\,ms
-offsets (5 left, 5 right).}
-\label{tab:channel-ablation}
-\begin{tabular}{lcccc}
+\caption{User study results, experimental ($n=13$) vs.\ placebo ($n=13$).
+$\Delta$ columns report both the mean and median change from calibration to
+test round; the median is included alongside the mean because several rows
+(notably CPS) have means skewed by a small number of participants. Mean\,\%
+$\Delta$ is the mean percent change relative to each participant's own
+calibration-round baseline. Misclicks are reported as participant count out
+of 13 who registered at least one misclick.}
+\label{tab:user-study}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccc}
 \hline
-\textbf{Configuration} & \textbf{Features} & \textbf{F1} & \textbf{$\Delta$ (row)} & \textbf{$\Delta$ (cumul.)} \\
+\textbf{Task} & \textbf{Metric} & \textbf{Experimental $\Delta$ (mean / median)} & \textbf{Placebo $\Delta$ (mean / median)} & \textbf{Mean\,\% $\Delta$ (exp.\ / placebo)} & \textbf{$p$ ($d$, $1-\beta$)} \\
 \hline
-Window statistics only (no probes, no kinematics) & 21 & 0.9421 & --- & --- \\
-+ Context probes ($\pm$10\,ms, 5+5)               & 41 & 0.9638 & $+2.17\%$ & $+2.17\%$ \\
-+ Velocity                                         & 59 & 0.9697 & $+0.59\%$ & $+2.76\%$ \\
-+ Acceleration                                     & 77 & 0.9702 & $+0.05\%$ & $+2.81\%$ \\
-+ Jerk                                             & 95 & 0.9706 & $+0.04\%$ & $+2.85\%$ \\
+CPS      & Clicks/s               & $+8$ / $+2$        & $-2$ / $-1$        & $+10.7\%$ / $-2.5\%$ & \textbf{$0.035$} ($d=0.92$, $1-\beta=0.62$) \\
 \hline
-\end{tabular}
+Tracking & Kills                  & $+1$ / $+1$        & $+0$ / $0$         & $+3.4\%$ / $+0.7\%$  & $0.068$ ($d=0.75$, $1-\beta=0.45$) \\
+Tracking & On-target              & $-0.4\%$ / $+0.2\%$ & $+0.3\%$ / $+0.3\%$ & $-0.7\%$ / $+0.8\%$  & $0.310$ ($d=-0.41$, $1-\beta=0.17$) \\
+Tracking & Clicking on-target     & $+3.1\%$ / $+3.6\%$ & $+0.9\%$ / $+0.5\%$ & $+4.2\%$ / $+1.1\%$  & $0.114$ ($d=0.65$, $1-\beta=0.36$) \\
+\hline
+Flicking & Targets hit            & $+2$ / $+2$        & $+5$ / $+4$        & $+2.7\%$ / $+5.1\%$  & $0.073$ ($d=-0.74$, $1-\beta=0.44$) \\
+Flicking & Accuracy               & $-0.6\%$ / $-1.0\%$ & $+1.5\%$ / $+1.6\%$ & $-0.5\%$ / $+1.7\%$  & $0.188$ ($d=-0.53$, $1-\beta=0.26$) \\
+\hline
+\end{tabular}%
+}
 \end{table*}
 
-Context probes contribute $+2.17\%$ deployment F1, roughly three times the combined
-gain of all kinematic derivative channels ($+0.68\%$).  The 10 raw depth samples at
-$\pm$10\,ms give the RF direct access to the local depth trajectory, allowing it to
-approximate velocity and acceleration implicitly from adjacent probe values; explicit
-kinematic channels are therefore largely redundant, and jerk adds a negligible
-$+0.04\%$ on top.
+\paragraph{CPS.} The calibrated group improved click rate by $+10.7\,\%$ against
+a $-2.5\,\%$ regression in the placebo group, a statistically significant and
+large effect ($p=0.035$, $d=0.92$). The median change is more modest
+($+2$ clicks vs.\ $-1$ click, i.e.\ $+3.2\,\%$ vs.\ $-2.0\,\%$ of each
+participant's own baseline), indicating the mean is pulled upward by a subset
+of participants with especially large gains rather than reflecting a uniform
+shift across the group; the direction of the effect nonetheless agrees with
+the mean. No misclicks were reported in either group on this task.
 
-Figure~\ref{fig:feat-importance} shows how importance is distributed across channel
-groups at each ablation step.  \texttt{analog\_L} --- which subsumes both window
-statistics and probe values --- is the dominant group in every configuration.  When
-kinematic channels are absent its share reaches 70.6\,\% (with probes) or 81.9\,\%
-(window statistics only).  As kinematics are added, velocity absorbs part of that
-share but \texttt{analog\_L} never falls below 31\,\%, confirming that the raw
-depth trajectory carries information that derived channels cannot fully substitute.
-\texttt{digital\_L} remains stable at 18--29\,\% throughout, reflecting the
-independent predictive value of the OS-reported press event.
+\paragraph{Tracking.} No metric reaches significance at $\alpha=0.05$, but the
+direction is consistently favorable: kill count and time spent actively clicking
+on-target both trend upward more for the calibrated group than for placebo.
+Given the sample size, these results are hints rather than conclusive evidence.
 
-\input{chapters/figures/fig-feat-importance}
+\paragraph{Flicking.} No metric reaches significance. The calibrated group shows
+a small decrease in targets hit and in accuracy relative to placebo, which we
+interpret cautiously: at this sample size a $-0.6$ vs.\ $+1.5$ percentage-point
+accuracy difference is plausibly noise, but it is also consistent with a
+plausible mechanism (Section~\ref{sec:eval-discussion}) in which a lower
+actuation point trades click-timing margin for accuracy in fast flicking tasks.
+Misclicks were reported by 3 of 13 calibrated participants on this task versus 0
+of 13 placebo, though the study was not powered to treat this as conclusive.
 
-For the RF architecture, probe range and density therefore matter more than channel
-engineering.  The natural next ablation is a \emph{wider-probe} study (e.g.\
-$\pm$50\,ms or $\pm$100\,ms offsets) to determine whether extending the 100\,ms
-probe horizon further narrows the gap to the FCN's 3\,s receptive field.
+\paragraph{Gamer-attribute interaction.} A mixed ANOVA (group $\times$ gamer
+status, self-reported) tested whether self-identified gamers and non-gamers
+responded differently to the intervention. No significant group $\times$ gamer
+interaction was found on any task, indicating the calibration's effect (or lack
+thereof) did not differ measurably between the two subpopulations at this sample
+size.
+
+\subsection{Recommendation Behavior}
+Independently of task performance, the optimizer produced a healthy spread of
+per-user actuation-point recommendations across the 26 participants (left-channel
+mean 22.6 of 120 depth levels, standard deviation 17.1), rather than collapsing to
+a single value or to the static default. This confirms that the models remained
+well-behaved when driving live per-user recommendations end-to-end, outside the
+offline evaluation setting of Section~\ref{sec:eval-opt}.
+
+\input{chapters/figures/fig-ap-recommendations}
+
+Figure~\ref{fig:ap-recommendations} breaks this spread down by game scenario.
+Flicking and tracking calibration rounds converge to broadly similar
+distributions, peaking at 24 and 36 respectively (median 24 and 36) with no
+participant recommended above 48. CPS calibration is markedly more
+concentrated at the lowest level (16 of 26 participants at AP 12, median 12)
+yet is the only scenario with participants recommended at 60 and 72.
+
+We attribute this high-AP tail to a behavioral artifact specific to the CPS
+task rather than to noise in the optimizer itself. Once rapid trigger (RT)
+engages after the switch has crossed the actuation point once, subsequent
+re-clicks are driven by the release-then-cross reactive-trigger sensitivity
+rather than by the actuation point, which is only consulted for the
+\emph{first} click of the sequence. Participants who anticipate the CPS
+prompt and pre-press before the round starts (a plausible strategy for
+maximizing raw click count within the 10-second window) generate a
+calibration signal in which the actuation point only ever matters for one
+make event, leaving the optimizer with a single, low-information point to
+fit against. This produces recommendations that are effectively
+under-constrained and free to drift toward the depth extremes, rather than
+genuinely indicating that a high actuation point benefits those
+participants.
+
+Recommended reactive-trigger (RT) sensitivity, by contrast, showed almost no
+spread: 25 of 26 participants were assigned the lowest available level (6),
+with a single participant at the next level (12). Unlike the actuation-point
+recommendation, RT sensitivity did not differentiate participants in this
+study, which may reflect either a genuinely uniform optimum across users or
+limited sensitivity of the underlying signal at this stage of the pipeline.
+
+\subsection{Study Limitations}
+The study was underpowered for most secondary metrics: observed power
+($1-\beta$) ranges from 0.17 to 0.62 across non-CPS metrics, well below the
+conventional 0.80 target, so null results for Tracking and Flicking should be
+read as inconclusive rather than as evidence of no effect. Applying Lehr's
+approximation to the observed effect sizes indicates that reaching adequately
+powered comparisons (target power 0.80 at $d\approx0.75$) would require
+approximately 29 participants per group (58 total), roughly $2.2\times$ the
+current sample. Between-subject group assignment also left substantial
+unmeasured skill-level variance uncontrolled, a single un-warmed-up test round
+per task leaves the results susceptible to a learning-effect confound between
+the calibration round and the test round, and gamer/non-gamer counts were not
+balanced in advance across groups (8/13 vs.\ 9/13 gamers in the CPS split, for
+example). These limitations are revisited in Section~\ref{sec:conclusion-lim}.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Discussion}
@@ -341,26 +632,31 @@ by 11.6\,ms (median 11.4\,ms) across every one of 238 channel-records, with a
 Wilcoxon signed-rank test on the per-session loss delta ($W=0$) confirming the
 improvement is consistent, not an artifact of a few large gains, and that the
 structure in individual telemetry is not only learnable but practically exploitable.
+The end-to-end user study (Section~\ref{sec:eval-user-study}) provides a first,
+underpowered but directionally consistent signal that this theoretical gain
+carries through to measured gameplay: a statistically significant CPS improvement,
+directionally favorable but inconclusive Tracking results, and a cautionary,
+non-significant accuracy trade-off on Flicking.
 
 \paragraph{Why the RF outperforms the FCN despite its simpler architecture.}
 The dilated residual FCN was expected to outperform the Random Forest by exploiting
 long-range temporal context (3,060-frame receptive field vs.\ a 33-frame sliding
 window).  On the left channel the FCN falls 3.4 percentage points short of the RF
-(F1 0.936 vs.\ 0.970) on the single held-out test set; more critically, its
-grouped cross-validation collapses to $0.597 \pm 0.174$, with one fold reaching
-0.367.  On the right channel the single-test gap is 8.2 points
-(0.836 vs.\ 0.918) and the grouped CV mean is 0.760.  The right-channel result reveals
+(F1 93.6\,\% vs.\ 97.0\,\%) on the single held-out test set; more critically, its
+grouped cross-validation collapses to $59.7 \pm 17.4$\,pp, with one fold reaching
+36.7\,\%.  On the right channel the single-test gap is 8.2 points
+(83.6\,\% vs.\ 91.8\,\%) and the grouped CV mean is 76.0\,\%.  The right-channel result reveals
 the underlying cause: the FCN requires sufficient labeled examples to learn
 latent temporal structure from a 3-second context window, and the right-button
 corpus (6,645 cycles) provides insufficient coverage.  On the left channel
-(39,088 cycles) the FCN reaches a near-identical IoU to the RF (0.915 vs.\
-0.916), suggesting the two models converge to comparable boundary estimates
+(39,088 cycles) the FCN reaches a near-identical IoU to the RF (91.5\,\% vs.\
+91.6\,\%), suggesting the two models converge to comparable boundary estimates
 once data is plentiful; however, the grouped cross-validation collapse shows this
 apparent parity does not reflect true cross-participant generalisation.
 
 \paragraph{The heuristic's IoU anomaly.}
-An unexpected finding is that the heuristic's IoU on matched clicks (0.916) matches
-the RF-L IoU (0.916) despite the RF's far higher deployment F1.  The heuristic
+An unexpected finding is that the heuristic's IoU on matched clicks (91.6\,\%) matches
+the RF-L IoU (91.6\,\%) despite the RF's far higher deployment F1.  The heuristic
 anchors its duration estimate on the OS digital event, which provides a reliable
 proxy for the full biomechanical press-to-release window; when the OS event is
 present and the heuristic correctly matches a ground-truth click, its Make and
@@ -373,7 +669,7 @@ duration estimate using the OS event when it is available.
 
 \paragraph{Failure mode analysis.}
 Fold~4 consistently produces the lowest deployment F1 across the tree-based models
-(RF-L: 0.910, GBT-R: 0.839).  Each grouped cross-validation fold holds out a specific
+(RF-L: 91.0\,\%, GBT-R: 83.9\,\%).  Each grouped cross-validation fold holds out a specific
 participant group, and the consistent ranking suggests the participants held out in
 fold~4 share an atypical click profile --- likely shallow resting depth or
 micro-tremor-rich idle signals that cause frequent false positives or missed
@@ -383,6 +679,21 @@ reliable background rejection for that subpopulation.  Active learning over the
 cross-validation folds --- prioritizing annotation of participants whose profiles
 diverge most from the training distribution --- is a natural direction for reducing
 this variance.
+
+\paragraph{Heuristic per-participant heterogeneity.}
+The geometric click-intent heuristic (Section~\ref{sec:labeling}) exhibits extreme
+individual variance, with per-participant F1 ranging from 0.1\,\% to 75.0\,\% on the
+left channel (CV=0.79) and 0.0\,\% to 43.5\,\% on the right (CV=0.82). This spread does
+not track cleanly with any single self-reported attribute (age, gaming genre, weekly
+hours, or experience level) we collected, which is itself informative: it suggests the
+heuristic's reliability is governed by low-level, unmeasured biomechanical factors ---
+grip pressure, resting finger depth, micro-tremor magnitude --- that a fixed-shape
+geometric rule (peak prominence and derivative thresholds tuned on aggregate statistics)
+cannot adapt to on a per-user basis. A purely geometric detector is, by construction,
+a single global rule applied uniformly across the population; when the underlying
+signal shape genuinely differs across individuals, no single set of thresholds can fit
+all of them well, which is precisely the failure mode a learned, per-user-adaptive
+classifier is designed to correct.
 
 \paragraph{Practical implications of the optimizer result.}
 The static mid-travel default (AP~5/10) assumes the user can press comfortably to
@@ -398,14 +709,37 @@ consistently across all 132 sessions without a measurable cost to TP rate.
 
 \paragraph{Architecture and training speed.}
 For deployment in a post-session recommendation workflow, training time is a practical
-constraint.  The RF right-channel model trains in 141\,s on a consumer CPU, and the
+constraint.  The RF right-channel model trains in 141\,s on CPU, and the
 left-channel model in 23 minutes.  The GBT and RF reach near-identical grouped
-cross-validation generalisation (mean F1 $\approx$0.933 on the L channel), making the
+cross-validation generalisation (mean F1 $\approx$93.3\,\% on the L channel), making the
 RF a strong production choice given its markedly lower training latency than the FCN.
-The FCN's 44-minute CPU training time is acceptable for occasional offline
-re-calibration but precludes on-demand per-session retraining; GPU acceleration would
-reduce this by an order of magnitude and may change the architecture trade-off in
-favour of the FCN once the right-channel corpus is expanded.
+The FCN's 44-minute training time is already measured with RTX~5080 CUDA
+acceleration, so no further order-of-magnitude speedup is available from hardware
+alone; it remains acceptable for occasional offline re-calibration but precludes
+on-demand per-session retraining, reinforcing the RF as the production default
+until the right-channel corpus is expanded enough to justify the FCN's
+architectural complexity on its own merits.
+
+\paragraph{From theoretical to measured gains.}
+The user study (Section~\ref{sec:eval-user-study}) provides the first evidence
+that the optimizer's simulator-measured latency reduction translates into
+observable gameplay change, at least for CPS: the calibrated group's $+10.7\,\%$
+click-rate gain against a placebo regression ($p=0.035$, $d=0.92$) is consistent
+with the make-latency improvement reported in Section~\ref{sec:eval-opt}, since a
+lower actuation point directly shortens the interval between successive presses
+in a rapid-click task. The Tracking results trend in the same direction without
+reaching significance, plausibly because tracking performance depends more on
+mouse-movement precision than on click latency, diluting the effect of a
+click-timing-only intervention. The Flicking result is the one point of tension
+with the theoretical model: a lower actuation point that improves make latency
+could simultaneously reduce the physical travel margin available before an
+unintended actuation, which would manifest as the observed (non-significant)
+accuracy decrease and elevated misclick count (3/13 vs.\ 0/13) in a fast,
+high-force flicking motion. This suggests the optimizer's objective function,
+which currently scores actuation timing in isolation, may need to account for
+mouse-movement dynamics to avoid trading click-timing gains for accuracy losses
+in flick-dominant contexts --- a concrete direction discussed further in
+Section~\ref{sec:conclusion-fw}.
 
 \paragraph{The role of context probes.}
 The dominance of context probes over engineered kinematic features

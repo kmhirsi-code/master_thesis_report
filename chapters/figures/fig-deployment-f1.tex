@@ -1,16 +1,18 @@
-\begin{figure*}[htbp]
-\centering
 \begin{tikzpicture}
 \begin{axis}[
   ybar=6pt, bar width=16pt,
   ylabel={Deployment F1},
+  ylabel style={font=\small},
   ymin=0.78, ymax=1.02,
-  xtick={1,2,3}, xticklabels={Random Forest, GBT, FCN},
+  xtick={1,2,3}, xticklabels={RF, GBT, FCN},
+  tick label style={font=\small},
   ymajorgrids=true, grid style={dashed, gray!35},
-  width=0.72\linewidth, height=5.5cm,
-  legend style={at={(0.02,0.98)}, anchor=north west, font=\small},
+  width=\linewidth, height=5.5cm,
+  legend style={at={(0.98,0.98)}, anchor=north east, font=\scriptsize},
   enlarge x limits=0.35,
   every axis plot/.append style={draw opacity=0.85},
+  nodes near coords,
+  nodes near coords style={font=\tiny, inner sep=2pt},
 ]
 \addplot[fill=blue!55, draw=blue!70]
   table[x expr=\coordindex+1, y=L_f1, col sep=space]
@@ -21,8 +23,8 @@
 \legend{Left channel, Right channel}
 \end{axis}
 \end{tikzpicture}
-\caption{Deployment F1 by architecture and button channel on the held-out test set.
-  The RF achieves the highest left-channel score (0.970); the FCN degrades
-  substantially on the right channel (0.836) due to the smaller right-button corpus.}
+
+\refstepcounter{figure}
+\small\textbf{Figure~\thefigure:} Deployment F1 by architecture and button channel on the held-out test set.
 \label{fig:deployment-f1}
-\end{figure*}
+\addcontentsline{lof}{figure}{\protect\numberline{\thefigure}{Deployment F1 by architecture and button channel on the held-out test set.}}

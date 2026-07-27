@@ -1,4 +1,4 @@
-\begin{figure*}[htbp]
+\begin{figure*}[tbp]
 \centering
 \begin{tikzpicture}
 \begin{axis}[
@@ -9,7 +9,7 @@
   xticklabel style={font=\small},
   ymajorgrids=true, grid style={dashed, gray!30},
   ymin=-9, ymax=3.5,
-  width=0.72\linewidth, height=5.5cm,
+  width=0.72\linewidth, height=4.5cm,
   enlarge x limits=0.3,
   tick label style={font=\small}, label style={font=\small},
   axis x line*=bottom,
@@ -31,14 +31,7 @@
 \end{tikzpicture}
 \caption{Accuracy-based generalisation gap $(a_\text{train} - a_\text{test}) /
 a_\text{train} \times 100\%$ for all six models, grouped by architecture.
-A positive value means the model achieves higher accuracy on the training set
-than on the held-out test set (classic overfitting); a negative value means the
-test accuracy exceeds training accuracy (strong regularisation or an easier test
-partition). All gaps are within $\pm 6\%$, confirming that none of the
-architectures overfits severely at the accuracy level. The right-channel FCN
-shows the largest negative gap ($-5.3\%$), consistent with strong dropout
-regularisation on a small corpus. GBT and FCN left-channel models exhibit small
-positive gaps ($<1\%$), indicating marginal overfitting on the more abundant
-left-button training set.}
+A positive value indicates higher training than test accuracy (overfitting);
+a negative value indicates the reverse.}
 \label{fig:gen-gap}
 \end{figure*}
