@@ -5,9 +5,10 @@
 
 This thesis set out to answer whether per-user variation in analog mouse-click
 telemetry is structured enough to support automatic labeling, statistical modeling,
-and firmware parameter optimization beyond static factory defaults.  The answer is
+and firmware parameter optimization beyond static default settings.  The answer is
 yes on all three fronts, confirmed by a complete pipeline evaluated on a corpus of
-132 annotated recordings from 39 participants collected at two public gaming events.
+132 annotated recordings from 39 participants, collected across two data-collection
+campaigns: an in-house controlled study and a public LAN gaming event.
 
 \paragraph{Labeling pipeline.}
 An algorithmic bootstrapping heuristic combined with iterative model-assisted
@@ -22,7 +23,7 @@ that are most informative for model training.
 \paragraph{Click-intent classification.}
 The Random Forest achieves a deployment F1 of 97.0\,\% on the left channel
 (grouped cross-validation mean $93.2\pm1.4$\,pp), with make- and break-boundary
-bias under 1.5\,ms --- well within the 8--12\,ms perceptual threshold.  Random
+bias within $\pm$1.3\,ms --- well within the 8--12\,ms perceptual threshold.  Random
 Forest and Gradient Boosted Trees achieve near-identical grouped cross-validation
 generalization, and the RF trains substantially faster on the left channel
 (23~minutes versus the FCN's 44~minutes), confirming it as the default production
@@ -56,15 +57,15 @@ offline evaluation alone could not have revealed.
 \label{sec:conclusion-lim}
 
 \paragraph{Heuristic unreliability across participants.}
-The heuristic bootstrap's deployment F1 varies from 0.1\,\% to 75.0\,\% across
-individual participants (CV~0.79 on the left channel), and this spread does not
-track cleanly with any collected demographic or self-reported gaming attribute.
-The heuristic applies one fixed geometric rule (peak prominence and derivative
-thresholds tuned on aggregate statistics) uniformly across the population; when
-individual grip pressure, resting depth, or micro-tremor magnitude differs enough
-from that aggregate profile, the rule fails outright rather than degrading
-gracefully. This is precisely the failure mode motivating a learned, per-user-adaptive
-classifier over a fixed geometric one.
+Section~\ref{sec:eval-discussion} shows that the heuristic bootstrap's per-participant
+deployment F1 spans 0.1\,\% to 75.0\,\% on the left channel and 0.0\,\% to 43.5\,\% on
+the right, and that this variance is not explained by any collected demographic or
+self-reported attribute. The practical consequence for this thesis is that the
+heuristic cannot serve as a standalone labeling or deployment strategy for any given
+user: its reliability cannot be predicted in advance from the attributes we
+collected, which is precisely why the annotation pipeline treats it as a bootstrap
+to be corrected by human review and a learned classifier, rather than as a
+deployable detector in its own right.
 
 \paragraph{Right-channel data imbalance.}
 The right-button corpus is approximately six times smaller than the left (6,645 vs.\
@@ -103,8 +104,9 @@ acceleration is already in use, further speedup would have to come from a
 smaller search space or distributed sweeps rather than additional hardware.
 
 \paragraph{Absence of session-level temporal context.}
-All three architectures operate on a local window of at most 100\,ms of context
-(24-frame window plus 10 context probes). The Random Forest has no access to
+All three architectures operate on a local window spanning only a few tens of
+milliseconds of hand-crafted features, augmented with $\pm$10\,ms context probes
+(Section~\ref{sec:eval-channel-ablation}). The Random Forest has no access to
 session-level dynamics: the current click's depth profile is evaluated in isolation
 from the cumulative fatigue drift, the inter-click tempo, or the running statistics
 of the session so far. Biomechanical research suggests that finger press depth and
@@ -124,6 +126,14 @@ that fail only one of the two radius checks. A graded similarity metric --- such
 distance-weighted match score or a duration-error penalty --- would provide a more
 informative picture of where boundary errors concentrate and would allow distinguishing
 a nearly correct prediction from a completely wrong one.
+
+\paragraph{No moderating effect of gaming experience detected.}
+A post-hoc mixed ANOVA (group $\times$ self-reported gamer status) found no
+significant interaction on any task (Section~\ref{sec:eval-user-study}), meaning
+the calibration effect could not be shown to differ between self-identified
+gamers and non-gamers. Given the recruitment imbalance noted below and the small
+sample size, this null result should be read as inconclusive rather than as
+evidence that gaming experience does not moderate the effect.
 
 \paragraph{Underpowered user study.}
 The end-to-end user study (Section~\ref{sec:eval-user-study}) used 13 participants
@@ -190,7 +200,7 @@ platforms or broader user populations), a full Optuna sweep over the FCN's
 architecture and training hyperparameters, run on the existing RTX~5080, would
 determine whether the left-channel performance gap is closeable. The probe
 ablation finding --- that
-the RF's 100\,ms probe window captures most of the available local context ---
+the RF's $\pm$10\,ms probe window captures most of the available local context ---
 suggests that the FCN's 3\,s receptive field advantage is currently nullified by
 data sparsity rather than by an architectural mismatch, making data expansion the
 higher-leverage investment.
@@ -207,6 +217,29 @@ a warmup round before each timed task to mitigate the learning-effect confound
 between the calibration and test rounds, and (4) balance gamer and non-gamer
 counts across groups in advance, or explicitly match participants on
 self-reported skill level, insofar as recruitment constraints allow.
+
+\paragraph{Hybrid detection-and-refinement strategy.}
+Section~\ref{sec:eval-discussion} notes that the heuristic's boundary estimates,
+when it does correctly match a click, are as tight as the RF's despite the
+heuristic's far lower detection rate --- because the heuristic anchors its
+duration estimate on the OS digital event, a reliable proxy that the learned
+models do not use. This suggests a hybrid strategy that combines the strengths
+of both: use the learned classifier to detect the clicks the OS event cannot
+register (firmware-unregistered or noise-confounded presses), and fall back to
+refining the boundary estimate against the OS digital event whenever it is
+available, rather than relying purely on the analog depth signal for boundary
+placement in cases the OS already resolves reliably.
+
+\paragraph{Active learning over cross-validation folds.}
+The failure-mode analysis in Section~\ref{sec:eval-discussion} shows that one
+held-out participant group (fold~4) drives most of the grouped cross-validation
+variance for three of four tree-based model/channel combinations, consistent
+with that group's profile diverging from the rest of the training distribution.
+Rather than collecting additional data uniformly, an active-learning loop could
+prioritize annotation effort toward participants whose telemetry is identified
+as most dissimilar from the current training distribution, directly targeting
+the atypical profiles responsible for the worst-case fold variance instead of
+diluting the corpus with more typical examples.
 
 \paragraph{Movement-aware optimization objective.}
 The Flicking result (Section~\ref{sec:eval-user-study}) suggests that optimizing

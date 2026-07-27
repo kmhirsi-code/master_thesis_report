@@ -167,7 +167,9 @@ learned models is \textbf{bolded}.
 All models achieve sub-2\,ms mean boundary bias, which is well within the perceptual
 threshold for click timing ($\approx$8--12\,ms).  The heuristic bootstrap achieves
 a pooled deployment F1 of only 19.9\,\% on the left channel across the full corpus,
-with per-participant F1 ranging from 0.1\,\% to 75.0\,\% (Section~\ref{sec:eval-discussion}).
+with per-participant F1 ranging from 0.1\,\% to 75.0\,\%; the right channel
+is pooled at 12.2\,\% with an even wider per-participant range of 0.0\,\% to 43.5\,\%
+(Section~\ref{sec:eval-discussion}).
 The dual-radius matching criterion (Section~\ref{sec:eval-setup}) means a click is
 only a true positive if both its make- and break-onsets are individually accurate;
 the heuristic's duration estimate can still be accurate when a click is matched at
@@ -626,7 +628,7 @@ The central hypothesis of this thesis is that per-user variation in analog click
 telemetry is structured enough to support automatic labeling, statistical modeling,
 and parameter optimization beyond static default settings.  The results across all
 three subsystems confirm this.  The learned classifier recovers 97.0\,\% of intended
-left-channel click events --- a $2.5\times$ improvement over a rule-based heuristic
+left-channel click events --- a $4.9\times$ improvement over a rule-based heuristic
 that cannot detect firmware-unregistered presses.  The optimizer reduces make latency
 by 11.6\,ms (median 11.4\,ms) across every one of 238 channel-records, with a
 Wilcoxon signed-rank test on the per-session loss delta ($W=0$) confirming the
@@ -640,8 +642,8 @@ non-significant accuracy trade-off on Flicking.
 
 \paragraph{Why the RF outperforms the FCN despite its simpler architecture.}
 The dilated residual FCN was expected to outperform the Random Forest by exploiting
-long-range temporal context (3,060-frame receptive field vs.\ a 33-frame sliding
-window).  On the left channel the FCN falls 3.4 percentage points short of the RF
+long-range temporal context (a 3,060-frame receptive field vs.\ a hand-crafted
+feature window spanning only tens of milliseconds of local context).  On the left channel the FCN falls 3.4 percentage points short of the RF
 (F1 93.6\,\% vs.\ 97.0\,\%) on the single held-out test set; more critically, its
 grouped cross-validation collapses to $59.7 \pm 17.4$\,pp, with one fold reaching
 36.7\,\%.  On the right channel the single-test gap is 8.2 points
@@ -668,12 +670,15 @@ use the learned classifier to detect clicks the OS cannot register, and refine t
 duration estimate using the OS event when it is available.
 
 \paragraph{Failure mode analysis.}
-Fold~4 consistently produces the lowest deployment F1 across the tree-based models
-(RF-L: 91.0\,\%, GBT-R: 83.9\,\%).  Each grouped cross-validation fold holds out a specific
-participant group, and the consistent ranking suggests the participants held out in
-fold~4 share an atypical click profile --- likely shallow resting depth or
-micro-tremor-rich idle signals that cause frequent false positives or missed
-detections.  This is a known challenge in per-user generalization: a model trained
+Fold~4 produces the lowest deployment F1 for three of the four tree-based
+model/channel combinations (RF-L: 91.0\,\%, GBT-L: 91.8\,\%, GBT-R: 83.9\,\%); the
+exception is RF-R, whose minimum instead falls at fold~3 (86.4\,\%).  Each grouped
+cross-validation fold holds out a specific participant group, and this largely
+consistent ranking suggests the participants held out in fold~4 share an atypical
+click profile --- likely shallow resting depth or micro-tremor-rich idle signals
+that cause frequent false positives or missed detections --- though the RF-R
+exception indicates the effect is not uniform across every model and channel.
+This is a known challenge in per-user generalization: a model trained
 on other participants may not have seen enough examples of extreme profiles to learn
 reliable background rejection for that subpopulation.  Active learning over the
 cross-validation folds --- prioritizing annotation of participants whose profiles
@@ -745,7 +750,7 @@ Section~\ref{sec:conclusion-fw}.
 The dominance of context probes over engineered kinematic features
 (Section~\ref{sec:eval-channel-ablation}) indicates that the production RF is
 effectively operating as a probe-based trajectory pattern matcher over a
-100\,ms raw-depth window, with kinematic channels providing a modest
+$\pm$10\,ms raw-depth window, with kinematic channels providing a modest
 regularisation signal on top.  This reframes the RF-versus-FCN comparison in
 Section~\ref{sec:eval-results}: both architectures ultimately draw most of their
 signal from local raw-depth context rather than from explicitly derived
