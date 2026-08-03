@@ -248,6 +248,99 @@ the more abundant left-button training set.
 
 \input{chapters/figures/fig-gen-gap}
 
+\subsection{Training-Set-Size Ablation (FCN)}
+\label{sec:eval-fcn-data-ablation}
+
+Section~\ref{sec:eval-discussion} attributes the FCN's right-channel shortfall and
+cross-validation instability primarily to insufficient training data. To test this
+directly, we retrained the FCN classifier independently for each channel across five
+training-corpus scales, holding the architecture and optimisation hyperparameters of
+Table~\ref{tab:thresholds} fixed. Table~\ref{tab:fcn-data-ablation} reports the same
+click-level, dual-radius deployment F1/precision/recall as Table~\ref{tab:deployment}
+against the number of frames in each run's held-out evaluation split, which scales
+with the size of the training corpus used, so these values are directly comparable
+to the full-data FCN rows already reported there.
+
+\begin{table*}[t]
+\centering
+\small
+\caption{FCN training-set-size ablation, reporting click-level deployment metrics
+(as in Table~\ref{tab:deployment}) at five training-corpus scales per channel.
+GT: number of ground-truth clicks in the held-out evaluation split. Best value
+per channel in \textbf{bold}.}
+\label{tab:fcn-data-ablation}
+\begin{tabular}{lrrrrr}
+\hline
+\textbf{Ch.} & \textbf{Frames} & \textbf{GT clicks} & \textbf{Deploy.\ F1} & \textbf{Deploy.\ P} & \textbf{Deploy.\ R} \\
+\hline
+L & 37,650   & 119  & 79.13\,\% & 81.98\,\% & 76.47\,\% \\
+L & 79,349   & 254  & 91.16\,\% & 90.98\,\% & 91.34\,\% \\
+L & 226,935  & 728  & 91.29\,\% & 91.92\,\% & 90.66\,\% \\
+L & 341,562  & 1,130 & 93.83\,\% & 93.42\,\% & 94.25\,\% \\
+L & 672,590  & 2,230 & \textbf{94.53\,\%} & 94.57\,\% & 94.48\,\% \\
+\hline
+R & 7,227    & 29   & 75.00\,\% & 77.78\,\% & 72.41\,\% \\
+R & 15,107   & 59   & 69.23\,\% & 80.00\,\% & 61.02\,\% \\
+R & 40,864   & 166  & 71.47\,\% & 74.51\,\% & 68.67\,\% \\
+R & 66,248   & 262  & 62.34\,\% & 68.98\,\% & 56.87\,\% \\
+R & 128,856  & 518  & \textbf{81.26\,\%} & 85.50\,\% & 77.41\,\% \\
+\hline
+\end{tabular}
+\end{table*}
+
+\input{chapters/figures/fig-fcn-data-ablation}
+
+Figure~\ref{fig:fcn-data-ablation} plots the same three metrics against
+evaluation-split size on a log axis, making the contrast between channels
+visually explicit: the left-channel curves separate cleanly and trend upward,
+while the right-channel curves are non-monotonic throughout. On the left
+channel, deployment F1 rises from 79.13\,\% at the smallest scale tested
+(37,650 evaluation frames, 119 ground-truth clicks) to 94.53\,\% at the largest
+(672,590 frames, 2,230 clicks) --- within 2.5 points of the RF's 97.0\,\%
+(Table~\ref{tab:deployment}) despite an architecture and training regime
+Section~\ref{sec:eval-discussion} otherwise finds harder to justify. The gain
+is front-loaded: the first corpus increase (37,650$\to$79,349 frames) buys
+12.03 points of F1, while the last (341,562$\to$672,590 frames) buys only
+0.70, consistent with the left-channel FCN approaching a data-scaling plateau
+near the current corpus size, in line with its near-parity IoU against the RF
+already noted in Section~\ref{sec:eval-discussion}.
+
+The right channel tells a different story. Deployment F1 is non-monotonic
+across all five scales tested (75.00\,\%, 69.23\,\%, 71.47\,\%, 62.34\,\%,
+81.26\,\%), dipping to its lowest value at the second-largest corpus
+(66,248 frames) before recovering to its best value at the largest
+(128,856 frames). With only 29--518 ground-truth clicks per evaluation split,
+each run's deployment F1 is a click-level statistic over a small sample, so
+a handful of missed or spurious detections shifts the pooled score by several
+points --- the ablation is too noisy at this scale to establish a clean
+trend the way the left channel's is. The best right-channel result (81.26\,\%
+at 128,856 frames) is nonetheless the strongest evidence in this ablation
+that more data helps: it is 6.26 points above the next-best right-channel run
+and only 12.8 points below the equivalent-ordinal left-channel run
+(91.16\,\% at 79,349 frames, itself $1.7\times$ smaller). The largest
+right-channel corpus tested here is still $5.2\times$ smaller than the
+left-channel's largest, and smaller than every left-channel point beyond the
+very first, so this ablation cannot yet distinguish between two explanations:
+(a)~the right channel's signal is inherently harder for the FCN to exploit at
+any practical scale, or (b)~the right channel simply has not yet reached the
+corpus size or sample count at which the left channel's gains stabilise.
+Growing the right-channel corpus toward the $\sim$340,000-frame range where
+the left channel's improvement rate first slows is the natural next
+experiment to disambiguate these.
+
+Training cost scales accordingly. Left-channel FCN training time grows from 226\,s at
+the smallest corpus scale to 2,695\,s (44.9\,min) at the largest, an $11.9\times$
+increase for a $17.9\times$ increase in evaluation-split size --- sublinear because
+larger corpora need fewer epochs to reach the early-stopping criterion (31 epochs at
+the smallest L scale vs.\ 17 at the largest; 60 vs.\ 16 for R). Closing the
+right-channel data gap identified above would therefore push FCN-R training time
+toward the same regime already flagged as impractical for on-demand retraining in
+Section~\ref{sec:eval-discussion}. Feature importance is comparatively stable across
+scale: \texttt{accel} remains the largest or second-largest contributor at every
+corpus size and in both channels (23--37\,\% of total importance), so the data-scaling
+behaviour above reflects how much signal the FCN can extract, not a shift in which
+signal it relies on.
+
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Segmentation Configuration}
 \label{sec:eval-seg}
@@ -321,6 +414,8 @@ $\pm$10\,ms give the RF direct access to the local depth trajectory, allowing it
 approximate velocity and acceleration implicitly from adjacent probe values; explicit
 kinematic channels are therefore largely redundant, and jerk adds a negligible
 $+0.04\%$ on top.
+
+\input{chapters/figures/fig-feat-importance}
 
 Figure~\ref{fig:feat-importance} shows how importance is distributed across channel
 groups at each ablation step.  \texttt{analog\_L} --- which subsumes both window
@@ -518,18 +613,20 @@ of 13 who registered at least one misclick.}
 \label{tab:user-study}
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{llcccc}
-\hline
-\textbf{Task} & \textbf{Metric} & \textbf{Experimental $\Delta$ (mean / median)} & \textbf{Placebo $\Delta$ (mean / median)} & \textbf{Mean\,\% $\Delta$ (exp.\ / placebo)} & \textbf{$p$ ($d$, $1-\beta$)} \\
-\hline
-CPS      & Clicks/s               & $+8$ / $+2$        & $-2$ / $-1$        & $+10.7\%$ / $-2.5\%$ & \textbf{$0.035$} ($d=0.92$, $1-\beta=0.62$) \\
-\hline
-Tracking & Kills                  & $+1$ / $+1$        & $+0$ / $0$         & $+3.4\%$ / $+0.7\%$  & $0.068$ ($d=0.75$, $1-\beta=0.45$) \\
-Tracking & On-target              & $-0.4\%$ / $+0.2\%$ & $+0.3\%$ / $+0.3\%$ & $-0.7\%$ / $+0.8\%$  & $0.310$ ($d=-0.41$, $1-\beta=0.17$) \\
-Tracking & Clicking on-target     & $+3.1\%$ / $+3.6\%$ & $+0.9\%$ / $+0.5\%$ & $+4.2\%$ / $+1.1\%$  & $0.114$ ($d=0.65$, $1-\beta=0.36$) \\
-\hline
-Flicking & Targets hit            & $+2$ / $+2$        & $+5$ / $+4$        & $+2.7\%$ / $+5.1\%$  & $0.073$ ($d=-0.74$, $1-\beta=0.44$) \\
-Flicking & Accuracy               & $-0.6\%$ / $-1.0\%$ & $+1.5\%$ / $+1.6\%$ & $-0.5\%$ / $+1.7\%$  & $0.188$ ($d=-0.53$, $1-\beta=0.26$) \\
-\hline
+\toprule
+\textbf{Task} & \textbf{Metric} & \textbf{Exp.\ $\Delta$ (mean/med.)} & \textbf{Placebo $\Delta$ (mean/med.)} & \textbf{Mean\,\%$\Delta$ (exp./plac.)} & \textbf{$p$ ($d$, $1{-}\beta$)} \\
+\midrule
+CPS      & Clicks/s               & $+8$ / $+2$        & $-2$ / $-1$        & $+10.7\%$ / $-2.5\%$ & \textbf{$0.035$} ($d=0.92$, $1{-}\beta=0.62$) \\
+\midrule
+\multirow{3}{*}{Tracking}
+         & Kills                  & $+1$ / $+1$         & $0$ / $0$           & $+3.4\%$ / $+0.7\%$  & $0.068$ ($d=0.75$, $1{-}\beta=0.45$) \\
+         & On-target              & $-0.4\%$ / $+0.2\%$ & $+0.3\%$ / $+0.3\%$ & $-0.7\%$ / $+0.8\%$  & $0.310$ ($d=-0.41$, $1{-}\beta=0.17$) \\
+         & Clicking on-target     & $+3.1\%$ / $+3.6\%$ & $+0.9\%$ / $+0.5\%$ & $+4.2\%$ / $+1.1\%$  & $0.114$ ($d=0.65$, $1{-}\beta=0.36$) \\
+\midrule
+\multirow{2}{*}{Flicking}
+         & Targets hit            & $+2$ / $+2$         & $+5$ / $+4$         & $+2.7\%$ / $+5.1\%$  & $0.073$ ($d=-0.74$, $1{-}\beta=0.44$) \\
+         & Accuracy               & $-0.6\%$ / $-1.0\%$ & $+1.5\%$ / $+1.6\%$ & $-0.5\%$ / $+1.7\%$  & $0.188$ ($d=-0.53$, $1{-}\beta=0.26$) \\
+\bottomrule
 \end{tabular}%
 }
 \end{table*}
@@ -655,6 +752,14 @@ corpus (6,645 cycles) provides insufficient coverage.  On the left channel
 91.6\,\%), suggesting the two models converge to comparable boundary estimates
 once data is plentiful; however, the grouped cross-validation collapse shows this
 apparent parity does not reflect true cross-participant generalisation.
+A dedicated training-set-size ablation (Section~\ref{sec:eval-fcn-data-ablation})
+partially supports this data-driven diagnosis: left-channel deployment F1 rises
+steadily with corpus scale before its improvement rate begins to slow near the
+current dataset size, while the right channel's deployment F1 is non-monotonic
+across the same range of evaluation-split sizes, with too few ground-truth clicks
+per run to establish a clean trend --- leaving open whether the right channel's
+data requirement is simply larger still, or whether its underlying signal is
+harder for the FCN to exploit regardless of scale.
 
 \paragraph{The heuristic's IoU anomaly.}
 An unexpected finding is that the heuristic's IoU on matched clicks (91.6\,\%) matches
@@ -723,7 +828,12 @@ acceleration, so no further order-of-magnitude speedup is available from hardwar
 alone; it remains acceptable for occasional offline re-calibration but precludes
 on-demand per-session retraining, reinforcing the RF as the production default
 until the right-channel corpus is expanded enough to justify the FCN's
-architectural complexity on its own merits.
+architectural complexity on its own merits. This cost also scales with corpus size:
+the training-set-size ablation (Section~\ref{sec:eval-fcn-data-ablation}) shows
+FCN-L training time growing from 226\,s to 44.9\,min across a $17.9\times$ increase
+in evaluation-split size, so closing the right channel's data gap --- the natural
+next step suggested by that ablation --- would only widen this training-time
+disadvantage relative to the RF.
 
 \paragraph{From theoretical to measured gains.}
 The user study (Section~\ref{sec:eval-user-study}) provides the first evidence
