@@ -12,7 +12,7 @@ campaigns: an in-house controlled study and a public LAN gaming event.
 
 \paragraph{Labeling pipeline.}
 An algorithmic bootstrapping heuristic combined with iterative model-assisted
-annotation produced 39,088 verified left-button and 6,645 right-button click cycles
+annotation produced 39,088 verified left-button and 6,645 right-button clicks
 at 1\,kHz.  The three-phase workflow (heuristic bootstrap $\to$ model-assisted
 labeling $\to$ human review) substantially reduced annotation burden relative to
 labeling from scratch while maintaining biomechanical fidelity: the heuristic alone
@@ -21,57 +21,87 @@ human review is essential for the firmware-unregistered and noise-confounded cas
 that are most informative for model training.
 
 \paragraph{Click-intent classification.}
-The Random Forest achieves a deployment F1 of 97.0\,\% on the left channel
-(grouped cross-validation mean $93.2\pm1.4$\,pp), with make- and break-boundary
-bias within $\pm$1.3\,ms --- well within the 8--12\,ms perceptual threshold.  Random
-Forest and Gradient Boosted Trees achieve near-identical grouped cross-validation
-generalization, and the RF trains substantially faster on the left channel
-(23~minutes versus the FCN's 44~minutes), confirming it as the default production
-architecture.  The dilated FCN, despite a 3,060-frame receptive field, provides
-no measurable gain on the left channel in the single-test comparison and collapses
-under grouped cross-validation on that same channel (F1~$59.7 \pm 17.4$\,pp),
-revealing that large-context models require proportionally large annotated
-corpora.
+Trained on the resulting labeled corpus, the Random Forest achieves a deployment
+F1 of 97.0\,\% on the left channel, with make- and break-boundary bias well
+within the $\pm4$\,ms matching radius used to score correctness --- though this
+reflects tight agreement with the ground-truth boundary annotation itself
+rather than an independently established perceptual threshold for click
+timing. The RF modestly outperforms Gradient Boosted Trees on this single
+held-out split despite the two achieving near-identical grouped
+cross-validation generalization (Tables~\ref{tab:deployment}
+and~\ref{tab:cv}), and trains roughly twice as fast as the FCN on the left
+channel --- a real but, as Section~\ref{sec:eval-discussion} notes, secondary
+consideration next to the cross-validated generalization gap --- together
+favoring the RF as the default architecture for deployment.
+The dilated FCN, despite a 3,060-frame receptive field, provides no measurable
+gain on the left channel in the single-test comparison and collapses under
+grouped cross-validation on that same channel (F1 $59.7 \pm 17.4$ percentage
+points (pp)); this is consistent with large-context models requiring
+proportionally large annotated corpora, though an underexplored hyperparameter
+space means a poorly tuned model cannot be ruled out
+(Section~\ref{sec:conclusion-lim}).
 
 \paragraph{Firmware threshold optimizer.}
-The exhaustive FSM simulator reduced optimizer loss by 49\,\% (Wilcoxon $W=0$,
-$n=238$, $p\ll 0.001$), increased the TP rate from 90.9\,\% to 97.5\,\%, and reduced
-mean make latency from 27.0\,ms to 15.4\,ms --- an 11.6\,ms improvement that spans
-roughly 1 perceptual just-noticeable difference for input timing, and represents a
-directly perceptible responsiveness gain available to every user without any manual
-configuration.
+Using the classifier's click-boundary predictions, the exhaustive FSM simulator
+reduced optimizer loss by 49\,\% (mean), increased
+the TP rate from 90.9\,\% to 97.5\,\%, and reduced
+mean make latency from 27.0\,ms to 15.4\,ms --- an 11.6\,ms reduction that, as
+Section~\ref{sec:eval-discussion} discusses, is best read as a measured
+latency improvement rather than a confirmed perceptible gain, absent a
+citable perceptual threshold for this context, and whose persistence beyond
+the session it was fit on has not yet been tested (Section~\ref{sec:conclusion-lim}).
 
 \paragraph{End-to-end user study.}
 A double-blind study with 26 participants (13 calibrated, 13 placebo) tested
-whether these theoretical gains are perceptible in gameplay. The calibrated group
+whether these optimizer-predicted gains are perceptible in gameplay. The
+calibrated group
 showed a statistically significant, large improvement in clicks-per-second
 ($+10.7\,\%$ vs.\ $-2.5\,\%$ for placebo, $p=0.035$, $d=0.92$), directionally
 favorable but inconclusive results on a tracking task, and a non-significant
 accuracy trade-off on a fast-flicking task accompanied by a higher misclick count.
-The study confirms the optimizer behaves well end-to-end --- producing a healthy,
-non-degenerate spread of per-user recommendations --- while also surfacing a
+The study is consistent with the optimizer behaving well end-to-end, but does not
+by itself confirm it. It produced a non-degenerate spread of per-user
+actuation-point recommendations, though part of that spread is inflated by a
+CPS-specific artifact: participants who pre-press before the round starts leave
+the optimizer only one low-information calibration point to fit, pushing
+recommendations toward the depth extremes rather than reflecting genuine
+per-user signal. Recommended reactive-trigger sensitivity, by contrast, did not
+differentiate participants at all --- 25 of 26 were assigned the lowest
+available level --- which may reflect a genuinely uniform optimum across users
+or limited sensitivity of the underlying signal at this stage of the pipeline
+(Section~\ref{sec:eval-user-study}). The study also surfaced a
 concrete risk (click-timing gains trading off against flick accuracy) that the
 offline evaluation alone could not have revealed.
 
 \section{Limitations}
 \label{sec:conclusion-lim}
 
+The limitations below fall into four groups: data and labeling quality (heuristic
+unreliability, right-channel imbalance, single-hardware coverage, annotation
+ambiguity), modeling (FCN hyperparameter search, absence of session-level context,
+the binary click-matching criterion), the optimizer's untested cross-session
+robustness, and the end-to-end user study's statistical power and validity
+(gaming-experience moderation, sample size, participant overlap).
+
 \paragraph{Heuristic unreliability across participants.}
 Section~\ref{sec:eval-discussion} shows that the heuristic bootstrap's per-participant
 deployment F1 spans 0.1\,\% to 75.0\,\% on the left channel and 0.0\,\% to 43.5\,\% on
 the right, and that this variance is not explained by any collected demographic or
-self-reported attribute. The practical consequence for this thesis is that the
+self-reported attribute. The practical consequence is that the
 heuristic cannot serve as a standalone labeling or deployment strategy for any given
 user: its reliability cannot be predicted in advance from the attributes we
-collected, which is precisely why the annotation pipeline treats it as a bootstrap
-to be corrected by human review and a learned classifier, rather than as a
-deployable detector in its own right.
+collected. This is a limitation of the heuristic itself, not merely a design
+choice made around it: the three-phase annotation pipeline already treats the
+heuristic as a bootstrap to be corrected by human review and a learned classifier
+rather than as a deployable detector in its own right, and this finding is what
+would block relaxing that correction step in the future, not just what motivated
+it originally.
 
 \paragraph{Right-channel data imbalance.}
 The right-button corpus is approximately six times smaller than the left (6,645 vs.\
-39,088 cycles), causing the FCN and the heuristic to degrade significantly on that
+39,088 clicks), causing the FCN and the heuristic to degrade significantly on that
 channel.  A balanced collection protocol --- or a dedicated right-click minigame that
-naturally elicits more right-button activity --- is needed for production
+naturally elicits more right-button activity --- is needed for practical
 right-channel deployment.
 
 \paragraph{Single hardware platform.}
@@ -119,13 +149,23 @@ extension addressing this gap.
 \paragraph{Binary click-matching criterion.}
 The dual-radius matching criterion used for deployment F1 (Section~\ref{sec:eval-setup})
 classifies each (predicted, ground-truth) pair as a binary hit or miss based on whether
-\emph{both} onsets fall within a fixed 8\,ms radius of their respective ground-truth
+\emph{both} onsets fall within a fixed 4\,ms radius of their respective ground-truth
 boundary centers. This treats a prediction whose make-onset misses the radius by 1\,ms
 the same as one that misses by 50\,ms, and discards any information about near-misses
 that fail only one of the two radius checks. A graded similarity metric --- such as a
 distance-weighted match score or a duration-error penalty --- would provide a more
 informative picture of where boundary errors concentrate and would allow distinguishing
 a nearly correct prediction from a completely wrong one.
+
+\paragraph{Optimizer cross-session robustness untested.}
+The corpus-wide optimizer benchmark (Section~\ref{sec:eval-opt}) fits and scores
+each configuration on the same session's data, which establishes the achievable
+magnitude of the loss reduction and make-latency improvement but not whether a
+configuration fit on one session continues to perform as well when applied
+prospectively to a later session from the same participant. Since within-user
+behavior may drift between sessions, this remains the primary open question
+about how much of the reported 49\,\% loss reduction and 11.6\,ms make-latency
+gain would hold up in a deployed, cross-session setting.
 
 \paragraph{No moderating effect of gaming experience detected.}
 A post-hoc mixed ANOVA (group $\times$ self-reported gamer status) found no
@@ -139,18 +179,42 @@ evidence that gaming experience does not moderate the effect.
 The end-to-end user study (Section~\ref{sec:eval-user-study}) used 13 participants
 per group, well below the $\sim$29 per group ($n=58$ total) that a Lehr's-formula
 power calculation at the observed effect sizes ($d\approx0.75$) indicates is
-needed for adequately powered ($1-\beta=0.80$) comparisons. Observed power on the
-non-CPS metrics ranged from 0.17 to 0.62. Between-subject assignment left
-uncontrolled variance in baseline skill level, no warmup round preceded the timed
-tasks (leaving results susceptible to a learning-effect confound between the
-calibration and test rounds), and gamer/non-gamer counts were not balanced in
+needed for adequately powered ($1-\beta=0.80$) comparisons. Consistent with this,
+the 95\,\% confidence intervals on Cohen's $d$ for all five non-CPS metrics
+include zero (Table~\ref{tab:user-study}), meaning none of those effects is
+statistically distinguishable from no effect at this sample size. Between-subject assignment left
+uncontrolled variance in baseline skill level; no warmup round preceded the timed
+tasks, so while the between-group $\Delta$ comparison controls for the average
+learning effect between calibration and test rounds, it does not control for a
+possible group $\times$ learning-effect interaction (e.g.\ if the calibrated
+configuration itself changes how much a participant improves with practice);
+and gamer/non-gamer counts were not balanced in
 advance across groups. The Tracking and Flicking results should therefore be read
 as hints rather than conclusive findings, and the Flicking accuracy/misclick
 trade-off in particular warrants replication before it is treated as a genuine
 effect of lowering the actuation point.
 
+\paragraph{Participant overlap between training corpus and user study.}
+Some of the 26 end-to-end user-study participants also contributed to the
+39-participant corpus used to train the Random Forest classifier
+(Section~\ref{sec:eval-user-study}), so the RF may have been exposed to some
+study participants' own data during training. The exact overlap was not
+tracked at the individual-participant level, so its magnitude cannot be
+quantified after the fact, and no sensitivity analysis excluding overlapping
+participants was run. This should therefore be kept in mind as a directional
+caveat when interpreting the measured CPS gain: part of it may reflect
+familiarity with those participants' click patterns rather than genuine
+per-user generalization to unseen users.
+
 \section{Future Work}
 \label{sec:conclusion-fw}
+
+\paragraph{Cross-device and cross-game generalization.}
+Replicating the data collection on Hall-effect keyboards and alternative mouse
+switches would test whether the trained feature representations transfer, and whether
+a single universal model is feasible or per-device fine-tuning is required.  The
+game-genre effect (FPS vs.\ MOBA click patterns, as observed in the PolyLAN dataset)
+is also worth modeling explicitly to produce genre-aware recommendations.
 
 \paragraph{On-device inference.}
 The current pipeline is entirely offline.  Quantizing the Random Forest to INT8 and
@@ -164,13 +228,6 @@ Neuromotor fatigue shifts the analog depth signal over the course of a gaming se
 lightweight online loop that monitors the running mean of the resting-drift channel
 and nudges the actuation threshold accordingly could maintain the optimized
 configuration as the user's biomechanical state evolves.
-
-\paragraph{Cross-device and cross-game generalization.}
-Replicating the data collection on Hall-effect keyboards and alternative mouse
-switches would test whether the trained feature representations transfer, and whether
-a single universal model is feasible or per-device fine-tuning is required.  The
-game-genre effect (FPS vs.\ MOBA click patterns, as observed in the PolyLAN dataset)
-is also worth modelling explicitly to produce genre-aware recommendations.
 
 \paragraph{Session-aware global feature extraction.}
 The most impactful architectural extension for the Random Forest would be to
@@ -194,6 +251,18 @@ boundary and emits a sub-frame corrected onset time. The Stage~2 model could be
 trained on residuals from the Stage~1 predictions, focusing its capacity entirely
 on the hard disambiguation cases near onset boundaries.
 
+\paragraph{Hybrid detection-and-refinement strategy.}
+Section~\ref{sec:eval-discussion} notes that the heuristic's boundary estimates,
+when it does correctly match a click, are as tight as the RF's despite the
+heuristic's far lower detection rate --- because the heuristic anchors its
+duration estimate on the OS digital event, a reliable proxy that the learned
+models do not use. This suggests a hybrid strategy that combines the strengths
+of both: use the learned classifier to detect the clicks the OS event cannot
+register (firmware-unregistered or noise-confounded presses), and fall back to
+refining the boundary estimate against the OS digital event whenever it is
+available, rather than relying purely on the analog depth signal for boundary
+placement in cases the OS already resolves reliably.
+
 \paragraph{FCN with systematic hyperparameter search.}
 With a larger corpus (achievable by extending collection to additional hardware
 platforms or broader user populations), a full Optuna sweep over the FCN's
@@ -204,6 +273,17 @@ the RF's $\pm$10\,ms probe window captures most of the available local context -
 suggests that the FCN's 3\,s receptive field advantage is currently nullified by
 data sparsity rather than by an architectural mismatch, making data expansion the
 higher-leverage investment.
+
+\paragraph{Active learning over cross-validation folds.}
+The failure-mode analysis in Section~\ref{sec:eval-discussion} shows that one
+held-out participant group (fold~4) drives most of the grouped cross-validation
+variance for three of four tree-based model/channel combinations, consistent
+with that group's profile diverging from the rest of the training distribution.
+Rather than collecting additional data uniformly, an active-learning loop could
+prioritize annotation effort toward participants whose telemetry is identified
+as most dissimilar from the current training distribution, directly targeting
+the atypical profiles responsible for the worst-case fold variance instead of
+diluting the corpus with more typical examples.
 
 \paragraph{Adequately powered, within-subject user study.}
 The user study reported in Section~\ref{sec:eval-user-study} establishes a
@@ -218,29 +298,6 @@ between the calibration and test rounds, and (4) balance gamer and non-gamer
 counts across groups in advance, or explicitly match participants on
 self-reported skill level, insofar as recruitment constraints allow.
 
-\paragraph{Hybrid detection-and-refinement strategy.}
-Section~\ref{sec:eval-discussion} notes that the heuristic's boundary estimates,
-when it does correctly match a click, are as tight as the RF's despite the
-heuristic's far lower detection rate --- because the heuristic anchors its
-duration estimate on the OS digital event, a reliable proxy that the learned
-models do not use. This suggests a hybrid strategy that combines the strengths
-of both: use the learned classifier to detect the clicks the OS event cannot
-register (firmware-unregistered or noise-confounded presses), and fall back to
-refining the boundary estimate against the OS digital event whenever it is
-available, rather than relying purely on the analog depth signal for boundary
-placement in cases the OS already resolves reliably.
-
-\paragraph{Active learning over cross-validation folds.}
-The failure-mode analysis in Section~\ref{sec:eval-discussion} shows that one
-held-out participant group (fold~4) drives most of the grouped cross-validation
-variance for three of four tree-based model/channel combinations, consistent
-with that group's profile diverging from the rest of the training distribution.
-Rather than collecting additional data uniformly, an active-learning loop could
-prioritize annotation effort toward participants whose telemetry is identified
-as most dissimilar from the current training distribution, directly targeting
-the atypical profiles responsible for the worst-case fold variance instead of
-diluting the corpus with more typical examples.
-
 \paragraph{Movement-aware optimization objective.}
 The Flicking result (Section~\ref{sec:eval-user-study}) suggests that optimizing
 actuation timing in isolation may trade away accuracy in movement-heavy click
@@ -250,3 +307,37 @@ mouse-movement telemetry (velocity or acceleration at the moment of click) into
 the optimizer's objective function could let it distinguish stationary clicks,
 where a low actuation point is unambiguously beneficial, from in-motion clicks,
 where a more conservative threshold may better preserve accuracy.
+
+\paragraph{Trajectory-aware and progressive sensitivity delivery.}
+Beyond feeding movement telemetry into the objective function above, the same
+signal could shape \emph{how} a recommended configuration is delivered rather
+than only what is recommended. When several near-optimal (AP, RT) candidates
+trade off similarly under the FSM simulator's loss, a trajectory-aware
+recommender could favor whichever one least disrupts the player's existing
+aim and flick habits. Separately, instead of applying a new configuration as
+a single abrupt change, the system could ramp the actuation point toward the
+recommended target progressively across sessions, giving the player's motor
+system time to adapt and potentially avoiding the accuracy cost observed in
+the Flicking task (Section~\ref{sec:eval-user-study}).
+
+\section{Closing Remarks}
+
+Returning to the hypothesis that opened this thesis (Chapter~\ref{chap:introduction}) ---
+that per-user variation in click telemetry is structured enough to support
+automatic labeling, statistical modeling, and parameter optimization beyond
+static thresholds --- the evidence gathered here supports it, subject to the
+qualifications catalogued above. The three contributions are not independent
+results but stages of one pipeline: the labeling pipeline supplies the corpus
+the classifier is trained on, the classifier's boundary predictions are what
+the optimizer's FSM simulation consumes, and the user study is the first test
+of whether these gains compound end-to-end rather than remaining theoretical.
+That chain is validated most completely on the left channel, where labeling,
+classification, and a statistically significant behavioral effect all align;
+it is validated only in principle on the right channel and under cross-session
+deployment, where data scarcity and untested robustness leave the thesis's
+strongest numbers provisional rather than settled. The contribution of this
+work is therefore best read as a validated methodology --- turning raw
+per-user click telemetry into an actionable firmware recommendation --- together
+with a precise map of where that methodology's evidence is strong and where it
+still needs to be extended before the static-threshold status quo it targets
+can be fully retired.

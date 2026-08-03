@@ -16,6 +16,7 @@
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{dblfloatfix}
+\usepackage{capt-of}
 \raggedbottom
 \renewcommand{\dbltopfraction}{0.9}
 \renewcommand{\dblfloatpagefraction}{0.8}
@@ -84,7 +85,9 @@ Analog peripherals with continuous depth-sensing hardware offer sub-millimetre
 actuation precision, yet their firmware often relies on static thresholds that
 ignore per-user biomechanical variance and degradation under neuromotor fatigue.
 This thesis addresses that gap by designing an end-to-end click-sensitivity
-recommendation pipeline for Haptic Inductive Trigger System (HITS) devices, evaluated on a set of 26 participants.
+recommendation pipeline for Haptic Inductive Trigger System (HITS) devices, built
+on a 39-participant annotated telemetry corpus and validated end-to-end in a
+double-blind study with 26 participants.
 
 The system makes three contributions.
 (1)~A supervised labeling workflow that bootstraps frame-level annotations from
@@ -101,9 +104,13 @@ stronger predictor than explicit kinematic derivative features.
 (3)~A firmware-faithful threshold optimizer that exhaustively evaluates the
 discrete (AP, RT) grid via a Rapid Trigger FSM simulator, replacing manual
 threshold tuning with a data-driven recommendation. Across the annotated
-corpus, the optimizer consistently reduces make latency and increases the
-true-positive detection rate relative to the factory default, with the
-improvement holding across every session evaluated.
+corpus, the optimizer configuration reduces mean loss by 49\,\% and mean make
+latency by 11.6\,ms relative to the factory default. A companion double-blind
+user study provides the first end-to-end test of whether this offline gain is
+perceptible in play: the calibrated group showed a significant
+clicks-per-second improvement over placebo ($+10.7$\,\% vs.\ $-2.5$\,\%,
+$p=0.035$), with directionally consistent but statistically inconclusive
+results on tracking and flicking tasks.
 \end{abstract}
 
 \clearpage

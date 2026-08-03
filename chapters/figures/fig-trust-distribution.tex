@@ -1,0 +1,27 @@
+\begin{figure}[tbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar, bar width=22pt,
+  xlabel={Trust score (1--5)},
+  ylabel={Participants ($n$)},
+  xtick={1,2,3,4,5},
+  ymin=0, ymax=37,
+  ymajorgrids=true, grid style={dashed, gray!30},
+  width=0.75\linewidth, height=5.5cm,
+  tick label style={font=\small}, label style={font=\small},
+  enlarge x limits=0.15,
+  axis x line*=bottom,
+  nodes near coords={\pgfmathprintnumber[precision=0]{\pgfplotspointmeta}},
+  nodes near coords style={font=\scriptsize, inner sep=2pt},
+]
+\addplot[fill=blue!55, draw=blue!70]
+  table[x=score, y=count, col sep=space] {chapters/figures/data/trust_distribution.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Distribution of participant trust ratings in the suggested hardware
+configuration across the full data-collection population ($n=68$; 1~=~no
+trust, 5~=~full trust). Mean $3.74$ (SD $0.87$); no participant rated trust
+at 1.}
+\label{fig:trust-distribution}
+\end{figure}

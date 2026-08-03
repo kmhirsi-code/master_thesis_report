@@ -5,9 +5,9 @@
   width=0.8\linewidth, height=6.4cm,
   xmode=log, log ticks with fixed point,
   enlarge x limits=0.08,
-  xtick={7227,15107,40864,66248,128856,341562,672590},
+  xtick={100000,300000,1000000,3000000,10000000},
   xticklabel style={rotate=45, anchor=north east, font=\scriptsize, yshift=-2pt},
-  xlabel={Evaluation-split size (frames)},
+  xlabel={Training-corpus size (frames)},
   xlabel style={font=\small, yshift=-18pt},
   ymin=50, ymax=104,
   ylabel={Score (\%)},
@@ -56,11 +56,11 @@
 \end{axis}
 \end{tikzpicture}
 \caption{Click-level deployment F1, precision, and recall (as in
-Table~\ref{tab:deployment}) versus evaluation-split size (log scale) for the
+Table~\ref{tab:deployment}) versus training-corpus size (log scale) for the
 FCN training-set-size ablation, left (L) and right (R) channels on a shared
 axis. Deployment F1 values are annotated directly above each point. The
 right channel's entire corpus range sits within the left channel's lower
-range, visually reflecting the $5.2\times$ gap between the largest
-right-channel split tested and the largest left-channel split tested.}
+range, visually reflecting the $5.6\times$ gap between the largest
+right-channel corpus tested and the largest left-channel corpus tested.}
 \label{fig:fcn-data-ablation}
 \end{figure*}
