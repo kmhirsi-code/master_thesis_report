@@ -31,15 +31,16 @@ the training and validation pool; the test set is evaluated exactly once per mod
 after all hyperparameter selection is complete.
 
 \subsection{Baselines}
-\begin{itemize}
-  \item \textbf{Majority-class baseline.} Assigns every frame the Background label.
-    Provides the floor under severe class imbalance.
-  \item \textbf{Heuristic bootstrap.} The OS-event-anchored walk-back detector described
-    in Section~\ref{sec:labeling}, evaluated as a segmentor on the test set.
-    Represents the pre-model ceiling achievable without a learned component.
-  \item \textbf{Static default firmware configuration.} Actuation Point at level 5/10
-    (mid-travel), Rapid Trigger disabled. Serves as the optimizer comparison point.
-\end{itemize}
+
+\paragraph{Majority-class baseline.} Assigns every frame the Background label.
+Provides the floor under severe class imbalance.
+
+\paragraph{Heuristic bootstrap.} The OS-event-anchored walk-back detector described
+in Section~\ref{sec:labeling}, evaluated as a segmentor on the test set.
+Represents the pre-model ceiling achievable without a learned component.
+
+\paragraph{Static default firmware configuration.} Actuation Point at level 5/10
+(mid-travel), Rapid Trigger disabled. Serves as the optimizer comparison point.
 
 \subsection{Metrics}
 \paragraph{Detection and segmentation.}
@@ -134,19 +135,19 @@ positioning as the primary production architecture.
 \small
 \setlength{\tabcolsep}{5pt}
 \begin{tabular}{llcccc}
-\hline
+\toprule
 \textbf{Model} & \textbf{Ch.} & \textbf{F1} & \textbf{P} & \textbf{R} & \textbf{IoU} \\
-\hline
+\midrule
 Heuristic      & L & 19.9\,\% & 20.0\,\% & 20.0\,\% & 91.6\,\% \\
 Heuristic      & R & 12.2\,\% & 11.5\,\% & 12.9\,\% & 89.9\,\% \\
-\hline
+\midrule
 RF             & L & \textbf{97.0\,\%} & \textbf{97.5\,\%} & \textbf{96.4\,\%} & 91.6\,\% \\
 RF             & R & 91.8\,\% & 93.0\,\% & 90.5\,\% & 90.0\,\% \\
 GBT            & L & 93.7\,\% & 93.2\,\% & 94.3\,\% & 89.9\,\% \\
 GBT            & R & 91.3\,\% & 91.3\,\% & 91.3\,\% & \textbf{91.7\,\%} \\
 FCN            & L & 93.6\,\% & 92.3\,\% & 94.8\,\% & 91.5\,\% \\
 FCN            & R & 83.6\,\% & 86.2\,\% & 81.1\,\% & 91.5\,\% \\
-\hline
+\bottomrule
 \end{tabular}
 \par\vspace{4pt}
 \refstepcounter{table}
@@ -202,16 +203,16 @@ F1 for all six models.
 distinct group of participants.}
 \label{tab:cv}
 \begin{tabular}{llccc}
-\hline
+\toprule
 \textbf{Model} & \textbf{Ch.} & \textbf{Mean F1} & \textbf{Std} & \textbf{Per-fold F1s} \\
-\hline
+\midrule
 Random Forest & L & 93.2\,\% & 1.4\,pp & [93.9, 95.3, 92.9, 91.0, 93.2]\,\% \\
 Random Forest & R & 89.0\,\% & 2.1\,pp & [87.5, 90.6, 86.4, 88.2, 92.2]\,\% \\
 GBT           & L & 93.4\,\% & 1.0\,pp & [93.8, 94.7, 93.4, 91.8, 93.3]\,\% \\
 GBT           & R & 87.3\,\% & 2.8\,pp & [85.6, 89.5, 85.9, 83.9, 91.4]\,\% \\
 FCN           & L & 59.7\,\% & 17.4\,pp & [82.2, 48.1, 54.4, 36.7, 77.4]\,\% \\
 FCN           & R & 76.0\,\% & 9.0\,pp & [80.5, 82.1, 61.2, 70.2, 85.8]\,\% \\
-\hline
+\bottomrule
 \end{tabular}
 \end{table*}
 
@@ -270,21 +271,21 @@ GT: number of ground-truth clicks in the held-out evaluation split. Best value
 per channel in \textbf{bold}.}
 \label{tab:fcn-data-ablation}
 \begin{tabular}{lrrrrr}
-\hline
+\toprule
 \textbf{Ch.} & \textbf{Frames} & \textbf{GT clicks} & \textbf{Deploy.\ F1} & \textbf{Deploy.\ P} & \textbf{Deploy.\ R} \\
-\hline
+\midrule
 L & 37,650   & 119  & 79.13\,\% & 81.98\,\% & 76.47\,\% \\
 L & 79,349   & 254  & 91.16\,\% & 90.98\,\% & 91.34\,\% \\
 L & 226,935  & 728  & 91.29\,\% & 91.92\,\% & 90.66\,\% \\
 L & 341,562  & 1,130 & 93.83\,\% & 93.42\,\% & 94.25\,\% \\
 L & 672,590  & 2,230 & \textbf{94.53\,\%} & 94.57\,\% & 94.48\,\% \\
-\hline
+\midrule
 R & 7,227    & 29   & 75.00\,\% & 77.78\,\% & 72.41\,\% \\
 R & 15,107   & 59   & 69.23\,\% & 80.00\,\% & 61.02\,\% \\
 R & 40,864   & 166  & 71.47\,\% & 74.51\,\% & 68.67\,\% \\
 R & 66,248   & 262  & 62.34\,\% & 68.98\,\% & 56.87\,\% \\
 R & 128,856  & 518  & \textbf{81.26\,\%} & 85.50\,\% & 77.41\,\% \\
-\hline
+\bottomrule
 \end{tabular}
 \end{table*}
 
@@ -358,17 +359,17 @@ the validation set. $\theta_m$, $\theta_b$: Schmitt-trigger entry thresholds on 
 probability output.}
 \label{tab:thresholds}
 \begin{tabular}{llccccc}
-\hline
+\toprule
 \textbf{Model} & \textbf{Ch.} & \textbf{$\theta_m$} & \textbf{$\theta_b$}
   & \textbf{Make method} & \textbf{Break method} & \textbf{Pairing} \\
-\hline
+\midrule
 Random Forest & L & 0.75 & 0.85 & plateau\_median & plateau\_median & first\_next \\
 Random Forest & R & 0.80 & 0.75 & peak & peak & first\_next \\
 GBT           & L & 0.90 & 0.05 & peak & plateau\_median & scored \\
 GBT           & R & 0.90 & 0.65 & peak & plateau\_median & scored \\
 FCN           & L & 0.50 & 0.50 & plateau\_median & plateau\_median & first\_next \\
 FCN           & R & 0.30 & 0.50 & peak & plateau\_median & hungarian \\
-\hline
+\bottomrule
 \end{tabular}
 \end{table*}
 
@@ -396,15 +397,15 @@ relative to the previous row; $\Delta$ (cumul.) is relative to window statistics
 only. Context probes: 10 raw depth samples at $\pm$10\,ms offsets (5 left, 5 right).}
 \label{tab:channel-ablation}
 \begin{tabular}{lcccc}
-\hline
+\toprule
 \textbf{Configuration} & \textbf{Features} & \textbf{F1} & \textbf{$\Delta$ (row)} & \textbf{$\Delta$ (cumul.)} \\
-\hline
+\midrule
 Window statistics only (no probes, no kinematics) & 21 & 94.21\,\% & --- & --- \\
 + Context probes ($\pm$10\,ms, 5+5)               & 41 & 96.38\,\% & $+2.17\%$ & $+2.17\%$ \\
 + Velocity                                         & 59 & 96.97\,\% & $+0.59\%$ & $+2.76\%$ \\
 + Acceleration                                     & 77 & 97.02\,\% & $+0.05\%$ & $+2.81\%$ \\
 + Jerk                                             & 95 & 97.06\,\% & $+0.04\%$ & $+2.85\%$ \\
-\hline
+\bottomrule
 \end{tabular}
 \end{table*}
 
@@ -446,19 +447,20 @@ probe horizon further narrows the gap to the FCN's 3\,s receptive field.
 configuration. Mean and median over 238 channel-records (132 sessions, 39 participants).}
 \label{tab:optimizer}
 \begin{tabular}{lrrrrrr}
-\hline
+\toprule
 \textbf{Metric}
   & \multicolumn{2}{c}{\textbf{Static default}}
   & \multicolumn{2}{c}{\textbf{Optimized}}
   & \multicolumn{2}{c}{\textbf{$\Delta$}} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
 & mean & median & mean & median & $\Delta$mean & $\Delta$median \\
-\hline
+\midrule
 Optimizer loss             & 36.2  & 28.4  & 18.4  &  15.3 & $-17.8$ & $-13.0$ \\
 TP rate                    & 90.9\,\% & 94.9\,\% & 97.5\,\% &  99.6\,\% & $+6.6$\,pp & $+4.7$\,pp \\
 Click distance (ms)        & 27.8  & 23.6  & 14.8  &  12.7 & $-13.0$ & $-10.9$ \\
 Make latency (ms)          & 27.0  & 24.5  & 15.4  &  13.1 & $-11.6$ & $-11.4$ \\
 Break latency (ms)         & 29.1  & 21.5  & 11.2  &  9.0  & $-17.9$ & $-12.5$ \\
-\hline
+\bottomrule
 \end{tabular}
 \end{table*}
 
@@ -537,7 +539,7 @@ each player. A single fixed seed was used across all 26 participants for each
 task, ensuring calibration and test rounds are directly comparable both within and
 across individuals.
 
-\emph{Block-randomized target generation.}
+\paragraph{Block-randomized target generation.}
 The sequence generator uses block randomization to control target difficulty:
 targets are grouped into distance ``buckets'' (five equally spaced distance values
 from 200\,px to 600\,px for flicking and tracking), and within each conceptual block
@@ -552,7 +554,7 @@ difficulty distribution regardless of task duration or participant performance.
 For participants who finish a partial block, the shortfall is at most one target
 per bucket, bounding the per-bucket imbalance.
 
-\emph{Controlling seed effects across per-participant calls.}
+\paragraph{Controlling seed effects across per-participant calls.}
 Rather than re-initializing the generator identically for both rounds (which would
 require re-running the same random number stream and risk subtle drift due
 to arena-size differences), the calibration round recorded the sequence of
@@ -582,7 +584,7 @@ arena-size variation or outlier positions. The pre-generated sequences were then
 loaded at runtime for each participant, ensuring exact reproducibility and uniform
 difficulty across all 26 × 3 task instances.
 
-\emph{Per-participant seed variance.}
+\paragraph{Per-participant seed variance.}
 Although a global seed was fixed across all participants to enable cross-participant
 comparison, each participant's internal gameplay is still subject to stochasticity in
 mouse movement, reaction time, and click latency — factors that are system properties,
